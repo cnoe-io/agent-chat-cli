@@ -51,11 +51,13 @@ def debug_log(message: str):
         print(f"DEBUG: {message}")
 
 def create_send_message_payload(text: str) -> dict[str, Any]:
+    message_id = uuid4().hex
     return {
+        "id": message_id,
         "message": {
             "role": "user",
             "parts": [{"type": "text", "text": text}],
-            "messageId": uuid4().hex,
+            "messageId": message_id,
             "contextId": SESSION_CONTEXT_ID  # Include the session context ID in each message
         }
     }
