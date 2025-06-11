@@ -12,7 +12,22 @@ Effortlessly interact with multiple protocols using a lightweight, intuitive com
 - 🚀 Lightweight and fast
 - 🔄 Command history support
 
-## ⚙️ Setup
+## 🚀 Usage
+
+### Running with Docker
+
+```bash
+# Use --network=host to connect to A2A agent on host network
+docker run -it --network=host -e A2A_HOST=localhost -e A2A_PORT=8000 docker.io/library/agent_chat_cli:stable
+```
+
+### Running with UVX
+
+```bash
+uvx https://github.com/cnoe-io/agent-chat-cli.git <a2a|mcp>
+```
+
+## ⚙️ [Optional] UVX Setup
 
 ### Create/Update `.env` (or input interactively)
 
@@ -25,14 +40,6 @@ A2A_TOKEN=
 ## MCP Server Configuration
 MCP_HOST=localhost
 MCP_PORT=9000
-```
-
-## 🚀 Usage
-
-### Running with UVX
-
-```bash
-uvx https://github.com/cnoe-io/agent-chat-cli.git <a2a|mcp>
 ```
 
 ### Running locally

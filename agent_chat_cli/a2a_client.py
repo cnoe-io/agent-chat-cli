@@ -4,21 +4,22 @@
 import os
 import asyncio
 import re
+import json
 import logging
 from uuid import uuid4
 from typing import Any, List
-from rich.markdown import Markdown
+
 from rich.console import Console
 from agent_chat_cli.chat_interface import run_chat_loop, render_answer
 
 import httpx
 from a2a.client import A2AClient, A2ACardResolver
-import json
 from a2a.types import (
   SendMessageResponse,
   SendMessageSuccessResponse,
   SendMessageRequest,
   MessageSendParams,
+  AgentCard,
 )
 import warnings
 
@@ -32,9 +33,6 @@ warnings.filterwarnings(
 
 # Set a2a.client logging to WARNING
 logging.getLogger("a2a.client").setLevel(logging.WARNING)
-
-from a2a.types import AgentCard
-import logging
 
 PUBLIC_AGENT_CARD_PATH = '/.well-known/agent.json'
 EXTENDED_AGENT_CARD_PATH = '/agent/authenticatedExtendedCard'

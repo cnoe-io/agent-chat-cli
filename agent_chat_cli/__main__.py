@@ -99,18 +99,30 @@ def a2a(host, port, token, debug):
   ))
 
   if not host:
-    host = simple_prompt("[info]Enter host[/info] (default: {})".format(env_host), default=env_host)
+    if env_host:
+      host = env_host
+    else:
+      host = simple_prompt("[info]Enter host[/info]", default=None)
 
   if not port:
-    port_input = simple_prompt("[info]Enter port[/info] (default: {})".format(env_port), default=env_port)
-    try:
-      port = int(port_input)
-    except ValueError:
-      console.print("[error]❌ Invalid port. Falling back to default {}.[/error]".format(env_port))
-      port = int(env_port)
+    if env_port:
+      try:
+        port = int(env_port)
+      except ValueError:
+        port = None
+    if not port:
+      port_input = simple_prompt("[info]Enter port[/info]", default=None)
+      try:
+        port = int(port_input)
+      except (ValueError, TypeError):
+        console.print("[error]❌ Invalid port. Please provide a valid port.[/error]")
+        sys.exit(1)
 
   if token is None:
-    token = simple_prompt("[info]Enter token[/info] (optional)", default=env_token, password=False)
+    if env_token:
+      token = env_token
+    else:
+      token = simple_prompt("[info]Enter token[/info] (optional)", default=None, password=False)
 
   console.print("🚀 [info]Launching A2A client...[/info]")
   client_module = load_client_module("a2a")

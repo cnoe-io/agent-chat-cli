@@ -14,7 +14,7 @@
 	add-copyright-license-headers
 
 .DEFAULT_GOAL := run-a2a-client
-
+AGENT_PKG_NAME := agent_chat_cli
 ## ========== Setup & Clean ==========
 
 setup-venv:        ## Create the Python virtual environment

@@ -2,7 +2,6 @@
 
 import asyncio
 import itertools
-import json
 import os
 import re
 import readline
@@ -99,7 +98,7 @@ async def run_chat_loop(handle_user_input: Callable[[str], Awaitable[None]],
                     print_welcome_message(agent_name)
                     continue
                 elif user_input.lower() == "history":
-                    console.print(f"\n[agent]📜 Chat History (last 100 entries):[/agent]")
+                    console.print("\n[agent]📜 Chat History (last 100 entries):[/agent]")
                     history = [readline.get_history_item(i) for i in range(1, readline.get_current_history_length() + 1)]
                     for idx, entry in enumerate(history[-100:], 1):
                         console.print(f"{idx}: {entry}")
@@ -119,7 +118,7 @@ async def run_chat_loop(handle_user_input: Callable[[str], Awaitable[None]],
                         except asyncio.CancelledError:
                             pass
             except (KeyboardInterrupt, EOFError):
-                console.print(f"\n[agent]👋 Chat interrupted. Goodbye![/agent]")
+                console.print("\n[agent]👋 Chat interrupted. Goodbye![/agent]")
                 break
     finally:
         try:
