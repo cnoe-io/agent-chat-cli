@@ -125,6 +125,10 @@ def a2a(host, port, token, debug):
       token = simple_prompt("[info]Enter token[/info] (optional)", default=None, password=False)
 
   console.print("🚀 [info]Launching A2A client...[/info]")
+  if "A2A_HOST" not in os.environ:
+    os.environ["A2A_HOST"] = str(host)
+  if "A2A_PORT" not in os.environ:
+    os.environ["A2A_PORT"] = str(port)
   client_module = load_client_module("a2a")
   client_module.main(host=host, port=port, token=token)
 
