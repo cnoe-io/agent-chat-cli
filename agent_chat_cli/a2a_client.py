@@ -4,6 +4,7 @@
 import os
 import asyncio
 import re
+import logging
 from uuid import uuid4
 from typing import Any, List
 from rich.markdown import Markdown
@@ -20,6 +21,17 @@ from a2a.types import (
   MessageSendParams,
 )
 import warnings
+
+# Suppress protobuf version warnings
+warnings.filterwarnings(
+  "ignore",
+  message="Protobuf gencode version .* is exactly one major version older than the runtime version .*",
+  category=UserWarning,
+  module="google.protobuf.runtime_version"
+)
+
+# Set a2a.client logging to WARNING
+logging.getLogger("a2a.client").setLevel(logging.WARNING)
 
 from a2a.types import AgentCard
 import logging
@@ -223,6 +235,8 @@ def main(host, port, token):
   logger.debug(f"Skills description: {skills_description}")
   logger.debug(f"Skills examples: {skills_examples}")
 
+  # Clear the console and print a header
+  console.clear()
   asyncio.run(run_chat_loop(
     handle_user_input,
     agent_name=agent_name,
