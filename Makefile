@@ -6,16 +6,14 @@
 # --------------------------------------------------
 
 .PHONY: \
-  build setup-venv activate-venv install run run-acp run-client \
-  langgraph-dev help clean clean-pyc clean-venv clean-build-artifacts \
-  install-uv install-wfsm verify-a2a-sdk evals \
-  run-a2a run-acp-client run-a2a-client run-curl-client \
-  run-mcp run-mcp-client test registry-agntcy-directory \
-  build-docker-acp build-docker-acp-tag build-docker-acp-push build-docker-acp-tag-and-push \
-  build-docker-a2a build-docker-a2a-tag build-docker-a2a-push build-docker-a2a-tag-and-push \
-  run-docker-acp run-docker-a2a \
-  check-env lint ruff-fix \
-  help add-copyright-license-headers
+	build setup-venv activate-venv install run \
+	help clean clean-pyc clean-venv clean-build-artifacts \
+	install-uv \
+	run-a2a-client run-mcp-client test \
+	check-env lint ruff-fix \
+	add-copyright-license-headers
+
+.DEFAULT_GOAL := run-a2a-client
 
 ## ========== Setup & Clean ==========
 
@@ -78,10 +76,6 @@ ruff-fix: setup-venv ## Auto-fix lint issues with ruff
 	@$(venv-activate) && ruff check $(AGENT_PKG_NAME) tests --fix
 
 ## ========== Clients ==========
-
-run-acp-client: setup-venv build install ## Run ACP client script
-	@$(MAKE) check-env
-	@$(venv-run) uv run python -m agent_chat_cli acp
 
 run-a2a-client: setup-venv build install ## Run A2A client script
 	@$(MAKE) check-env

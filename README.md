@@ -1,31 +1,26 @@
-# Welcome to the ACP/A2A/MCP Multi-Protocol Agentic Chat Client 🤖💬
+# Welcome to the A2A/MCP Multi-Protocol Agentic Chat Client 🤖💬
 
-Effortlessly interact with multiple protocols using a lightweight, intuitive command-line chat interface. Whether you're managing ACP, A2A, or MCP agents, this tool has you covered!
+Effortlessly interact with multiple protocols using a lightweight, intuitive command-line chat interface. Whether you're managing A2A or MCP agents, this tool has you covered!
 
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
 ## ✨ Features
 
-- 🔌 Easy integration with multiple protocols (ACP, A2A, MCP)
+- 🔌 Easy integration with multiple protocols (A2A, MCP)
 - 💬 Friendly and intuitive chat UI for the command-line interface
 - 🚀 Lightweight and fast
 - 🔄 Command history support
 
-
 ## ⚙️ Setup
 
-### Create/Update `.env`
+### Create/Update `.env` (or input interactively)
 
 ```env
-## ACP Agent Configuration
-CNOE_AGENT_ARGOCD_API_KEY=
-CNOE_AGENT_ARGOCD_ID=
-CNOE_AGENT_ARGOCD_PORT=10000
-
 ## A2A Agent Configuration
-A2A_AGENT_HOST=localhost
-A2A_AGENT_PORT=8000
+A2A_HOST=localhost
+A2A_PORT=8000
+A2A_TOKEN=
 
 ## MCP Server Configuration
 MCP_HOST=localhost
@@ -37,24 +32,16 @@ MCP_PORT=9000
 ### Running with UVX
 
 ```bash
-uvx https://github.com/cnoe-io/agent-chat-cli.git <acp|a2a|mcp>
+uvx https://github.com/cnoe-io/agent-chat-cli.git <a2a|mcp>
 ```
 
 ### Running locally
-
-```bash
-make run-acp-client
-```
 
 ```bash
 make run-a2a-client
 ```
 
 ## Quick Demos
-
-### AGNTCY ACP Demo
-
-![acp_docker_terminal_demo](https://github.com/user-attachments/assets/9f090ce4-87f3-4bc7-8857-2ea4647187d5)
 
 ### Google A2A Demo
 
