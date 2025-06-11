@@ -5,6 +5,8 @@ Effortlessly interact with multiple protocols using a lightweight, intuitive com
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
 
+[![Docker Build and Push](https://github.com/cnoe-io/agent-chat-cli/actions/workflows/docker-build-publish.yml/badge.svg)](https://github.com/cnoe-io/agent-chat-cli/actions/workflows/docker-build-publish.yml) [![Ruff Linter](https://github.com/cnoe-io/agent-chat-cli/actions/workflows/lint.yml/badge.svg)](https://github.com/cnoe-io/agent-chat-cli/actions/workflows/lint.yml) [![Conventional Commits](https://github.com/cnoe-io/agent-chat-cli/actions/workflows/conventional_commits.yml/badge.svg)](https://github.com/cnoe-io/agent-chat-cli/actions/workflows/conventional_commits.yml)
+
 ## ✨ Features
 
 - 🔌 Easy integration with multiple protocols (A2A, MCP)
