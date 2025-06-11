@@ -20,7 +20,7 @@ Effortlessly interact with multiple protocols using a lightweight, intuitive com
 
 ```bash
 # Use --network=host to connect to A2A agent on host network
-docker run -it --network=host -e A2A_HOST=localhost -e A2A_PORT=8000 docker.io/library/agent_chat_cli:stable
+docker run -it --network=host ghcr.io/cnoe-io/agent-chat-cli:stable
 ```
 
 ### Running with UVX
