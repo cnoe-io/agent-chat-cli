@@ -136,7 +136,7 @@ def extract_response_text(response) -> str:
 async def handle_user_input(user_input: str):
   debug_log(f"Received user input: {user_input}")
   try:
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as httpx_client:
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as httpx_client:
       debug_log(f"Connecting to agent at {AGENT_URL}")
       client = await A2AClient.get_client_from_agent_card_url(httpx_client, AGENT_URL)
       debug_log("Successfully connected to agent")
