@@ -58,7 +58,9 @@ SESSION_CONTEXT_ID = uuid4().hex
 async def get_available_tools() -> List[str]:
   """Fetch available tools from the agent."""
   try:
-    async with httpx.AsyncClient(timeout=httpx.Timeout(30.0)) as httpx_client:
+    # Create a client to connect to the agent.
+    # Timeout set to 300 seconds (5 mins) for long agent operations.
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as httpx_client:
       client = await A2AClient.get_client_from_agent_card_url(httpx_client, AGENT_URL)
       # Send a test message to get the agent's capabilities
       payload = create_send_message_payload("What tools do you have available?")
