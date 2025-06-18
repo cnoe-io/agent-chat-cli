@@ -7,6 +7,7 @@
 ### Fix
 
 - commitzen
+- commitzen
 - **poetry**: pyproject.toml to be commitizen compatible
 
 ## 0.2.0 (2025-06-18)
