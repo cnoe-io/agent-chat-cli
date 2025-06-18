@@ -97,6 +97,16 @@ test: setup-venv build ## Run tests using pytest and coverage
 	@$(venv-activate) && poetry add pytest-asyncio pytest-cov --dev
 	@$(venv-activate) && pytest -v --tb=short --disable-warnings --maxfail=1 --ignore=evals --cov=$(AGENT_PKG_NAME) --cov-report=term --cov-report=xml
 
+## ========== Release & Versioning ==========
+release: setup-venv build ## Bump version and create a release
+	@$(venv-activate) && poetry install
+	@$(venv-activate) && poetry add commitizen --dev
+	@$(venv-activate) && git tag -d stable || echo "No stable tag found."
+	@$(venv-activate) && cz bump --$(ARGS:-PATCH)
+	@$(venv-activate) && git tag -f stable
+	@echo "Version bumped and stable tag updated successfully."
+
+
 ## ========== Licensing & Help ==========
 
 add-copyright-license-headers: ## Add license headers
