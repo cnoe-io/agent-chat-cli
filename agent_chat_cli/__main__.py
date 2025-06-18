@@ -129,8 +129,14 @@ def a2a(host, port, token, debug):
     os.environ["A2A_HOST"] = str(host)
   if "A2A_PORT" not in os.environ:
     os.environ["A2A_PORT"] = str(port)
+
+  if os.environ.get("A2A_TLS", "false").lower() in ["true", "1", "yes"]:
+    tls = True
+  else:
+    tls = False
+    
   client_module = load_client_module("a2a")
-  client_module.main(host=host, port=port, token=token)
+  client_module.main(host=host, port=port, token=token, tls=tls)
 
 
 if __name__ == '__main__':

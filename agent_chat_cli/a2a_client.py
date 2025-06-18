@@ -49,7 +49,10 @@ warnings.filterwarnings(
 
 AGENT_HOST = os.environ.get("A2A_HOST", "localhost")
 AGENT_PORT = os.environ.get("A2A_PORT", "8000")
-AGENT_URL = f"http://{AGENT_HOST}:{AGENT_PORT}"
+if os.environ.get("A2A_TLS", "false").lower() in ["1", "true", "yes"]:
+  AGENT_URL = f"https://{AGENT_HOST}:{AGENT_PORT}"
+else:
+  AGENT_URL = f"http://{AGENT_HOST}:{AGENT_PORT}"
 DEBUG = os.environ.get("A2A_DEBUG_CLIENT", "false").lower() in ["1", "true", "yes"]
 console = Console()
 
@@ -170,11 +173,14 @@ async def handle_user_input(user_input: str):
     print(f"ERROR: Exception occurred: {str(e)}")
     raise
 
-async def fetch_agent_card(host, port, token: str) -> AgentCard:
+async def fetch_agent_card(host, port, token: str, tls: bool) -> AgentCard:
   """
   Fetch the agent card, preferring the authenticated extended card if supported.
   """
-  base_url = f"http://{host}:{port}"
+  if tls:
+    base_url = f"https://{host}:{port}"
+  else:
+    base_url = f"http://{host}:{port}"
 
   PUBLIC_AGENT_CARD_PATH = '/.well-known/agent.json'
   EXTENDED_AGENT_CARD_PATH = '/agent/authenticatedExtendedCard'
@@ -218,9 +224,9 @@ async def fetch_agent_card(host, port, token: str) -> AgentCard:
     return final_agent_card_to_use
 
 
-def main(host, port, token):
+def main(host, port, token, tls):
   # Fetch the agent card before running the chat loop
-  agent_card = asyncio.run(fetch_agent_card(host, port, token))
+  agent_card = asyncio.run(fetch_agent_card(host, port, token, tls))
   agent_name = agent_card.name if hasattr(agent_card, "name") else "Agent"
   print(f"✅ A2A Agent Card detected for \033[1m\033[32m{agent_name}\033[0m")
   skills_description = ""
