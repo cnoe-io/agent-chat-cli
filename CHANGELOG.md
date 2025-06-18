@@ -1,12 +1,11 @@
-## 0.2.1 (2025-06-18)
+## Unreleased
 
 ### Fix
 
-- commitzen
-- commitzen
-- commitzen
+- **pyproject.toml**: restore project.scripts
+- uv.lock
 
-## 0.3.0 (2025-06-18)
+## 0.2.1 (2025-06-18)
 
 ### Feat
 
@@ -14,6 +13,9 @@
 
 ### Fix
 
+- commitzen
+- commitzen
+- commitzen
 - commitzen
 - commitzen
 - **poetry**: pyproject.toml to be commitizen compatible
