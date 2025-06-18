@@ -3,11 +3,10 @@
 
 import os
 import asyncio
-import re
 import json
 import logging
 from uuid import uuid4
-from typing import Any, List
+from typing import Any
 
 from rich.console import Console
 from agent_chat_cli.chat_interface import run_chat_loop, render_answer
