@@ -110,6 +110,7 @@ async def handle_user_input(user_input: str):
     async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as httpx_client:
       debug_log(f"Connecting to agent at {AGENT_URL}")
       client = await A2AClient.get_client_from_agent_card_url(httpx_client, AGENT_URL)
+      client.url = AGENT_URL  # Ensure the client uses the correct URL
       debug_log("Successfully connected to agent")
 
       payload = create_send_message_payload(user_input)
@@ -119,7 +120,7 @@ async def handle_user_input(user_input: str):
         id=uuid4().hex,
         params=MessageSendParams(**payload)
       )
-      debug_log("Sending message to agent...")
+      debug_log(f"Sending message to agent at {client.url}...")
 
       response: SendMessageResponse = await client.send_message(request)
       debug_log("Received response from agent")
