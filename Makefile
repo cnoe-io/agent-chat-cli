@@ -84,6 +84,12 @@ run-a2a-client: setup-venv build install ## Run A2A client script
 run-mcp-client: setup-venv build install ## Run MCP client script
 	@$(MAKE) check-env
 	@$(venv-run) uv run python -m agent_chat_cli mcp
+
+## ========== Docker Build ==========
+build-docker: ## Build Docker image for the agent
+	@echo "Building Docker image..."
+	@docker build -t cnoe/$(AGENT_PKG_NAME):latest .
+
 ## ========== Tests ==========
 
 test: setup-venv build ## Run tests using pytest and coverage

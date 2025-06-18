@@ -1,20 +1,18 @@
-[tool.poetry]
+[project]
 name = "agent-chat-cli"
 version = "0.2.0"
 description = "Multi-Protocol (A2A/MCP) Agent Chat CLI Interface"
-authors = [
-  "Sri Aradhyula <sraradhy@cisco.com>"
-]
+authors = [{name = "Sri Aradhyula", email = "sraradhy@cisco.com"}]
 readme = "README.md"
-
-[tool.poetry.dependencies]
-requires-python = ">=3.13,<4.0"
-a2a-sdk = ">=0.2.6"
-click = ">=8.2.1"
-dotenv = ">=0.9.9"
-httpx = ">=0.28.1"
-httpx-sse = ">=0.4.0"
-rich = ">=14.0.0"
+requires-python = ">=3.10,<4.0"
+dependencies = [
+  "a2a-sdk>=0.2.6",
+  "click>=8.2.1",
+  "dotenv>=0.9.9",
+  "httpx>=0.28.1",
+  "httpx-sse>=0.4.0",
+  "rich>=14.0.0"
+]
 
 [build-system]
 requires = ["poetry-core>=2.0.0,<3.0.0"]
