@@ -3,11 +3,10 @@
 
 import os
 import asyncio
-import re
 import json
 import logging
 from uuid import uuid4
-from typing import Any, List
+from typing import Any
 
 from rich.console import Console
 from agent_chat_cli.chat_interface import run_chat_loop, render_answer
@@ -58,42 +57,11 @@ console = Console()
 
 SESSION_CONTEXT_ID = uuid4().hex
 
-async def get_available_tools() -> List[str]:
-  """Fetch available tools from the agent."""
-  try:
-    # Create a client to connect to the agent.
-    # Timeout set to 300 seconds (5 mins) for long agent operations.
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as httpx_client:
-      client = await A2AClient.get_client_from_agent_card_url(httpx_client, AGENT_URL)
-      # Send a test message to get the agent's capabilities
-      payload = create_send_message_payload("What tools do you have available?")
-      request = SendMessageRequest(
-        id=uuid4().hex,
-        params=MessageSendParams(**payload)
-      )
-      response = await client.send_message(request)
-
-      if isinstance(response.root, SendMessageSuccessResponse):
-        # Extract tools from the response
-        tools = []
-        if hasattr(response.root, "result") and hasattr(response.root.result, "artifacts"):
-          for artifact in response.root.result.artifacts:
-            if hasattr(artifact, "parts"):
-              for part in artifact.parts:
-                if part.get("kind") == "text":
-                  # Look for tool descriptions in the response
-                  tool_matches = re.findall(r"Tool: (.*?)(?:\n|$)", part.get("text", ""))
-                  tools.extend(tool_matches)
-        return tools
-  except Exception as e:
-    debug_log(f"Error fetching tools: {str(e)}")
-  return []
-
 def debug_log(message: str):
   if DEBUG:
     print(f"DEBUG: {message}")
 
-def create_send_message_payload(text: str, tools: List[str]) -> dict[str, Any]:
+def create_send_message_payload(text: str) -> dict[str, Any]:
   return {
     "message": {
       "role": "user",
@@ -144,11 +112,7 @@ async def handle_user_input(user_input: str):
       client = await A2AClient.get_client_from_agent_card_url(httpx_client, AGENT_URL)
       debug_log("Successfully connected to agent")
 
-      # Get available tools
-      tools = await get_available_tools()
-      debug_log(f"Available tools: {tools}")
-
-      payload = create_send_message_payload(user_input, tools)
+      payload = create_send_message_payload(user_input)
       debug_log(f"Created payload with message ID: {payload['message']['messageId']}")
 
       request = SendMessageRequest(
