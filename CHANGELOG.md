@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- commitzen
+
 ## 0.3.0 (2025-06-18)
 
 ### Feat
