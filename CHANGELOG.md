@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- client always uses 0.0.0.0
+
 ## 0.2.2 (2025-06-18)
 
 ### Fix
