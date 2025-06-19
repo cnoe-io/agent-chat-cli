@@ -1,6 +1,6 @@
 [project]
 name = "agent-chat-cli"
-version = "0.2.2" # Update this to match tools.poetry.version to be backwards compatibility with commitizen.
+version = "0.2.3" # Update this to match tools.poetry.version to be backwards compatibility with commitizen.
 description = "Multi-Protocol (A2A/MCP) Agent Chat CLI Interface"
 authors = [{name = "Sri Aradhyula", email = "sraradhy@cisco.com"}]
 readme = "README.md"
