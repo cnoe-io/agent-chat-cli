@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **Dockerfile**: simplify docker run
+
 ## 0.2.3 (2025-06-18)
 
 ### Fix
