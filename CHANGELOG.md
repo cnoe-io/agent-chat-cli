@@ -1,3 +1,9 @@
+## Unreleased
+
+### Fix
+
+- **Dockerfile**: use poetry --quiet
+
 ## 0.2.4 (2025-07-11)
 
 ### Fix
