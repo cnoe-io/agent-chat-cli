@@ -99,14 +99,14 @@ test: setup-venv build ## Run tests using pytest and coverage
 
 ## ========== Release & Versioning ==========
 release: setup-venv  ## Bump version and create a release
-	@$(venv-activate) && poetry install
-	@$(venv-activate) && poetry add commitizen --dev
-	@$(venv-activate) && git tag -d stable || echo "No stable tag found."
-	@$(venv-activate) && cz changelog
+	@. .venv/bin/activate; poetry install
+	@. .venv/bin/activate; poetry add commitizen --dev
+	@. .venv/bin/activate; git tag -d stable || echo "No stable tag found."
+	@. .venv/bin/activate; cz changelog
 	@git add CHANGELOG.md
 	@git commit -m "docs: update changelog"
-	@$(venv-activate) && cz bump --increment PATCH
-	@$(venv-activate) && git tag -f stable
+	@. .venv/bin/activate; cz bump --increment PATCH
+	@. .venv/bin/activate; git tag -f stable
 	@echo "Version bumped and stable tag updated successfully."
 
 
