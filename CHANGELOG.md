@@ -1,3 +1,10 @@
+## Unreleased
+
+### Fix
+
+- **a2a-sdk**: pin a2a-sdk==0.2.16 to avoid breaking change in 0.3.0
+- **a2a-sdk**: pin a2a-sdk==0.2.16 to avoid breaking change in 0.3.0
+
 ## 0.2.5 (2025-07-11)
 
 ### Fix
