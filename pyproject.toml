@@ -6,7 +6,7 @@ authors = [{name = "Sri Aradhyula", email = "sraradhy@cisco.com"}]
 readme = "README.md"
 requires-python = ">=3.10,<4.0"
 dependencies = [
-  "a2a-sdk>=0.2.6",
+  "a2a-sdk>=0.2.16",
   "click>=8.2.1",
   "dotenv>=0.9.9",
   "httpx>=0.28.1",
