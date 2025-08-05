@@ -26,7 +26,7 @@ docker run -it --network=host ghcr.io/cnoe-io/agent-chat-cli:stable
 ### Running with UVX
 
 ```bash
-uvx https://github.com/cnoe-io/agent-chat-cli.git <a2a|mcp>
+uvx https://github.com/cnoe-io/agent-chat-cli.git a2a
 ```
 
 ## ⚙️ [Optional] UVX Setup
