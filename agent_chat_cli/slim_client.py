@@ -18,10 +18,14 @@ from a2a.types import (
     Role,
 )
 from agntcy_app_sdk.factory import AgntcyFactory, ProtocolTypes
-from agntcy_app_sdk.protocols.a2a.protocol import A2AProtocol
-
 console = Console()
 logger = logging.getLogger("slim_client")
+# Set a2a.client logging to WARNING
+logging.getLogger("a2a.client").setLevel(logging.WARNING)
+logging.basicConfig(level=logging.WARNING)
+
+# Default A2A topic for SLIM clients
+TOPIC = "default/default/agent-slim"
 
 _factory: AgntcyFactory = AgntcyFactory()
 _transport: Any = None
@@ -98,39 +102,6 @@ def _extract_response_text(response) -> str:
     return ""
 
 
-def _compute_routable_name(subject: Union[AgentCard, dict, str]) -> str:
-    # Derive org/namespace/local_name from the best available info
-    org = "cnoe"  # default org; override via env if provided
-    namespace = "agents"  # default namespace
-    local = "agent"  # default local name
-
-    # Allow environment overrides
-    org = os.environ.get("SLIM_ORG", org)
-    namespace = os.environ.get("SLIM_NAMESPACE", namespace)
-
-    # Prefer AgentCard.name for local; else dict["name"]; else last token of string/URL
-    if isinstance(subject, AgentCard):
-        local = getattr(subject, "name", None) or local
-    elif isinstance(subject, dict):
-        local = subject.get("name") or local
-    else:
-        s = str(subject).strip()
-        if s.startswith(("http://", "https://")):
-            local = s.rstrip("/").rsplit("/", 1)[-1] or local
-        elif s:
-            local = s
-
-    # Sanitize local to avoid spaces and illegal chars
-    local = str(local).strip().replace(" ", "-").replace("/", "-")
-    # Ensure non-empty components
-    org = org or "cnoe"
-    namespace = namespace or "agents"
-    local = local or "agent"
-    # Allow full override if provided
-    override = os.environ.get("SLIM_ROUTABLE_NAME")
-    if override:
-        return override
-    return f"{org}/{namespace}/{local}"
 
 
 async def _ensure_client():
@@ -140,16 +111,7 @@ async def _ensure_client():
     if _client is not None:
         return
 
-    subject = _remote_card_card or _remote_card_raw
-    logger.debug(f"_ensure_client: subject type={type(subject)}, subject preview={str(subject)[:200]}")
-    if isinstance(subject, AgentCard):
-        topic = "default/default/agent-slim"
-        # logger.debug(f"_ensure_client: created A2A topic via SDK from AgentCard: {topic}")
-    else:
-        topic = "default/default/agent-slim"
-        logger.warning("_ensure_client: non-AgentCard subject provided; building topic locally to avoid SDK .name access")
-        logger.debug(f"_ensure_client: created A2A topic locally from non-card subject: {topic}")
-
+    topic = TOPIC
     _client = await _factory.create_client(
         ProtocolTypes.A2A.value, agent_topic=topic, transport=_transport
     )
@@ -169,17 +131,6 @@ async def handle_user_input(user_input: str):
             "parts": parts,
         }
 
-        trace_id = os.environ.get("CNOE_TRACE_ID")
-        if not trace_id:
-            try:
-                from cnoe_agent_utils.tracing import TracingManager
-
-                tracing = TracingManager()
-                trace_id = tracing.get_trace_id() if tracing.is_enabled else None
-            except Exception:
-                trace_id = None
-        if trace_id:
-            msg_kwargs["metadata"] = {"trace_id": trace_id}
 
         logger.debug(f"handle_user_input: msg_kwargs keys={list(msg_kwargs.keys())}, metadata={msg_kwargs.get('metadata')}")
 
@@ -233,9 +184,7 @@ def main(endpoint: str, remote_card: str, debug: bool = False):
     globals()["_remote_card_card"] = card_obj
 
     # Create transport early so failures surface before UI interaction
-    subject_for_name = globals().get("_remote_card_card") or _remote_card_raw or "agent"
-    routable_name = _compute_routable_name(subject_for_name)
-    logger.debug(f"main: creating SLIM transport endpoint={_endpoint!r} name={routable_name!r}")
+    logger.debug(f"main: creating SLIM transport endpoint={_endpoint!r} name={TOPIC!r}")
     global _transport
     if _transport is None:
         _transport = _factory.create_transport("SLIM", endpoint=_endpoint, name="default/default/agent-slim-client")
