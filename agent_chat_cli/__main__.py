@@ -139,5 +139,38 @@ def a2a(host, port, token, debug):
   client_module.main(host=host, port=port, token=token, tls=tls)
 
 
+@cli.command()
+@click.option('--endpoint', '-e', default=None, help='SLIM transport endpoint (e.g., 127.0.0.1:46357)')
+@click.option('--remote-card', '-c', default=None, help='Remote agent card (URL, JSON string, or file path)')
+@click.option('--debug', is_flag=True, help='Enable debug logging')
+def slim(endpoint, remote_card, debug):
+    """Run SLIM protocol client."""
+    if debug:
+        logging.getLogger().setLevel(logging.DEBUG)
+        logging.getLogger("slim_client").setLevel(logging.DEBUG)
+        logging.getLogger("agntcy_app_sdk").setLevel(logging.DEBUG)
+
+    env_endpoint = os.environ.get("SLIM_ENDPOINT")
+    env_remote_card = os.environ.get("SLIM_REMOTE_CARD")
+
+    def simple_prompt(label: str, default: str = None, password: bool = False) -> str:
+        console.print(f"💬 [prompt]{label}[/prompt]", end="")
+        return Prompt.ask("", default=default, password=password)
+
+    if not endpoint:
+        endpoint = env_endpoint or simple_prompt("[info]Enter SLIM endpoint (host:port)[/info]")
+
+    if not remote_card:
+        remote_card = env_remote_card or simple_prompt("[info]Enter remote Agent Card (URL or JSON or file path)[/info]")
+
+    # Ensure endpoint always contains scheme for SLIM transport
+    if endpoint and not endpoint.startswith(("http://", "https://")):
+        endpoint = f"http://{endpoint}"
+
+    console.print("🚀 [info]Launching SLIM client...[/info]")
+    client_module = load_client_module("slim")
+    client_module.main(endpoint=endpoint, remote_card=remote_card, debug=debug)
+
+
 if __name__ == '__main__':
     cli()

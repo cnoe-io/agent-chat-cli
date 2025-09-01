@@ -42,12 +42,24 @@ A2A_TOKEN=
 ## MCP Server Configuration
 MCP_HOST=localhost
 MCP_PORT=9000
+
+## SLIM Agent Configuration
+SLIM_ENDPOINT=127.0.0.1:46357
+SLIM_REMOTE_CARD=http://127.0.0.1:46357/.well-known/agent.json
 ```
 
 ### Running locally
 
 ```bash
 make run-a2a-client
+make run-slim-client
+```
+
+### SLIM CLI Examples
+
+```bash
+uv run python -m agent_chat_cli slim -e 127.0.0.1:46357 -c http://127.0.0.1:46357/.well-known/agent.json
+uvx https://github.com/cnoe-io/agent-chat-cli.git slim
 ```
 
 ## Quick Demos

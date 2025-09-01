@@ -85,6 +85,10 @@ run-mcp-client: setup-venv build install ## Run MCP client script
 	@$(MAKE) check-env
 	@$(venv-run) uv run python -m agent_chat_cli mcp
 
+run-slim-client: setup-venv build install ## Run SLIM client script
+	@$(MAKE) check-env || true
+	@$(venv-run) uv run python -m agent_chat_cli slim
+
 ## ========== Docker Build ==========
 build-docker: ## Build Docker image for the agent
 	@echo "Building Docker image..."
