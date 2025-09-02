@@ -48,24 +48,26 @@ def _slugify_segment(s: Optional[str]) -> str:
     v = re.sub(r"-{2,}", "-", v).strip("-")
     return v or "default"
 
-def _derive_valid_topic(card: Optional[AgentCard]) -> str:
+def _derive_valid_topic(card: Optional[AgentCard]) -> Optional[str]:
     base_topic = None
-    if card:
-        try:
-            base_topic = A2AProtocol.create_agent_topic(card)
-            logger.debug(f"_derive_valid_topic: base_topic from SDK={base_topic!r}")
-        except Exception as e:
-            logger.debug(f"_derive_valid_topic: failed to get topic via SDK: {e}")
+    if not card:
+        logger.error("_derive_valid_topic: no AgentCard provided")
+        return None
+    try:
+        base_topic = A2AProtocol.create_agent_topic(card)
+        logger.debug(f"_derive_valid_topic: base_topic from SDK={base_topic!r}")
+    except Exception as e:
+        logger.debug(f"_derive_valid_topic: failed to get topic via SDK: {e}")
 
-    # Always use default/default as prefix; compute only the final name segment
     local_candidate: Optional[str] = None
     if getattr(card, "name", None):
         local_candidate = card.name
     elif isinstance(base_topic, str) and base_topic:
-        # If SDK topic exists, take only its final segment
         local_candidate = base_topic.rsplit("/", 1)[-1]
-    else:
-        local_candidate = "agent-slim"
+
+    if not local_candidate:
+        logger.error("_derive_valid_topic: no name available on AgentCard and no SDK topic")
+        return None
 
     local = _slugify_segment(local_candidate)
     topic = f"default/default/{local}"
@@ -148,8 +150,8 @@ async def _ensure_client():
 
     topic = _a2a_topic or TOPIC
     if not isinstance(topic, str) or topic.count("/") != 2:
-        logger.warning("_ensure_client: invalid agent_topic %r; falling back to default %r", topic, TOPIC)
-        topic = TOPIC
+        logger.error("_ensure_client: invalid agent_topic %r; cannot continue", topic)
+        raise RuntimeError("Invalid agent topic derived from Agent Card. Please verify the agent is available and try again.")
     _client = await _factory.create_client(
         ProtocolTypes.A2A.value, agent_topic=topic, transport=_transport
     )
@@ -222,8 +224,21 @@ def main(endpoint: str, remote_card: str, debug: bool = False):
     # Save normalized card for later topic creation
     globals()["_remote_card_card"] = card_obj
 
+    if card_obj is None:
+        console.print("[error]❌ Unable to load or parse remote Agent Card.[/error]")
+        console.print("[warning]Please verify the agent is running and reachable, and that the remote card is available.[/warning]")
+        console.print(f"[info]Remote card: {remote_card}[/info]")
+        if _endpoint:
+            console.print(f"[info]Endpoint: {_endpoint}[/info]")
+        raise SystemExit(2)
+
     # Derive and normalize A2A topic from AgentCard
     a2a_topic_local = _derive_valid_topic(card_obj)
+    if not (isinstance(a2a_topic_local, str) and a2a_topic_local.count("/") == 2):
+        console.print("[error]❌ Unable to derive A2A topic from Agent Card.[/error]")
+        console.print("[warning]Please check that the agent is available and its Agent Card is valid.[/warning]")
+        console.print(f"[info]Agent name: {getattr(card_obj, 'name', None)!r}[/info]")
+        raise SystemExit(2)
     globals()["_a2a_topic"] = a2a_topic_local
     logger.debug(f"main: using a2a_topic={globals()['_a2a_topic']!r}")
 
