@@ -79,11 +79,15 @@ ruff-fix: setup-venv ## Auto-fix lint issues with ruff
 
 run-a2a-client: setup-venv build install ## Run A2A client script
 	@$(MAKE) check-env
-	@$(venv-run) uv run python -m agent_chat_cli a2a
+	@$(venv-run) AGENT_CHAT_PROTOCOL=a2a uv run python -m agent_chat_cli
 
 run-mcp-client: setup-venv build install ## Run MCP client script
 	@$(MAKE) check-env
 	@$(venv-run) uv run python -m agent_chat_cli mcp
+
+run-slim-client: setup-venv build install ## Run SLIM client script
+	@$(MAKE) check-env || true
+	@$(venv-run) AGENT_CHAT_PROTOCOL=slim uv run python -m agent_chat_cli
 
 ## ========== Docker Build ==========
 build-docker: ## Build Docker image for the agent
