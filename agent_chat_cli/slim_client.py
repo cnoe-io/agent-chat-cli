@@ -148,7 +148,7 @@ async def _ensure_client():
 
     topic = _a2a_topic or TOPIC
     if not isinstance(topic, str) or topic.count("/") != 2:
-        logger.warning(f"_ensure_client: invalid agent_topic %r; falling back to default %r", topic, TOPIC)
+        logger.warning("_ensure_client: invalid agent_topic %r; falling back to default %r", topic, TOPIC)
         topic = TOPIC
     _client = await _factory.create_client(
         ProtocolTypes.A2A.value, agent_topic=topic, transport=_transport
@@ -188,7 +188,7 @@ async def handle_user_input(user_input: str):
         logger.debug(f"handle_user_input: extracted text len={len(text)} preview={text[:200]!r}")
         render_answer(text, agent_name=_agent_name or "Agent")
     except Exception as e:
-        logger.exception(f"handle_user_input: exception while sending/rendering")
+        logger.exception("handle_user_input: exception while sending/rendering")
         render_answer(f"❌ Error sending message: {e}", agent_name=_agent_name or "Agent")
 
 
