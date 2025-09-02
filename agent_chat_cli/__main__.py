@@ -147,7 +147,8 @@ def slim(endpoint, remote_card, debug):
     """Run SLIM protocol client."""
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
-        logging.getLogger("slim_client").setLevel(logging.DEBUG)
+        logging.getLogger("agent_chat_cli").setLevel(logging.DEBUG)
+        logging.getLogger("agent_chat_cli.slim_client").setLevel(logging.DEBUG)
         logging.getLogger("agntcy_app_sdk").setLevel(logging.DEBUG)
 
     env_endpoint = os.environ.get("SLIM_ENDPOINT")
@@ -173,4 +174,10 @@ def slim(endpoint, remote_card, debug):
 
 
 if __name__ == '__main__':
+    # Choose default subcommand from env when none is provided
+    default_mode = os.environ.get("AGENT_CHAT_PROTOCOL", "").strip().lower() or "a2a"
+    if len(sys.argv) == 1:
+        if default_mode not in ("a2a", "slim"):
+            default_mode = "a2a"
+        sys.argv.insert(1, default_mode)
     cli()

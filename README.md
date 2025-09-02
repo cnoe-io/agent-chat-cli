@@ -19,15 +19,57 @@ Effortlessly interact with multiple protocols using a lightweight, intuitive com
 ### Running with Docker
 
 ```bash
-# Use --network=host to connect to A2A agent on host network
-docker run -it --network=host ghcr.io/cnoe-io/agent-chat-cli:stable
+# Default (A2A) mode
+docker run -it ghcr.io/cnoe-io/agent-chat-cli:stable
+
+# A2A mode (host-network may be required if your agent runs on the host)
+docker run -it --network=host \
+  -e AGENT_CHAT_PROTOCOL=a2a \
+  -e A2A_HOST=localhost -e A2A_PORT=8000 \
+  ghcr.io/cnoe-io/agent-chat-cli:stable
+
+# SLIM mode
+docker run -it \
+  -e AGENT_CHAT_PROTOCOL=slim \
+  -e SLIM_ENDPOINT=127.0.0.1:46357 \
+  -e SLIM_REMOTE_CARD=http://127.0.0.1:46357/.well-known/agent.json \
+  ghcr.io/cnoe-io/agent-chat-cli:stable
 ```
 
 ### Running with UVX
 
 ```bash
+# Use env var to choose protocol (defaults to slim when omitted)
+AGENT_CHAT_PROTOCOL=a2a uvx https://github.com/cnoe-io/agent-chat-cli.git
+AGENT_CHAT_PROTOCOL=slim uvx https://github.com/cnoe-io/agent-chat-cli.git
+
+# Or explicitly specify the subcommand
 uvx https://github.com/cnoe-io/agent-chat-cli.git a2a
+uvx https://github.com/cnoe-io/agent-chat-cli.git slim
 ```
+
+## Selecting the protocol via environment variable
+
+The CLI and Docker image can choose the protocol at runtime using:
+
+- **AGENT_CHAT_PROTOCOL**: one of `a2a` or `slim` (default: `a2a`)
+- **AGENT_CHAT_DEBUG**: set to `1` to enable debug logging in the container/CLI
+
+Examples:
+
+- Local: `AGENT_CHAT_PROTOCOL=a2a uv run python -m agent_chat_cli`
+- Docker: `docker run -e AGENT_CHAT_PROTOCOL=slim ghcr.io/cnoe-io/agent-chat-cli:stable`
+
+Protocol-specific configuration:
+
+- **A2A**
+  - `A2A_HOST` (default: `localhost`)
+  - `A2A_PORT` (default: `8000`)
+  - `A2A_TOKEN` (optional)
+  - `A2A_TLS` (optional; `true`/`1`/`yes` to enable TLS)
+- **SLIM**
+  - `SLIM_ENDPOINT` (e.g., `127.0.0.1:46357`)
+  - `SLIM_REMOTE_CARD` (URL, JSON string, or file path; e.g., `http://127.0.0.1:46357/.well-known/agent.json`)
 
 ## ⚙️ [Optional] UVX Setup
 
@@ -53,6 +95,8 @@ SLIM_REMOTE_CARD=http://127.0.0.1:46357/.well-known/agent.json
 ```bash
 make run-a2a-client
 make run-slim-client
+AGENT_CHAT_PROTOCOL=a2a uv run python -m agent_chat_cli
+AGENT_CHAT_PROTOCOL=slim uv run python -m agent_chat_cli
 ```
 
 ### SLIM CLI Examples

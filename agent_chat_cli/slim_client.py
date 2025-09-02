@@ -3,6 +3,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 from uuid import uuid4
 
 import httpx
@@ -18,11 +19,11 @@ from a2a.types import (
     Role,
 )
 from agntcy_app_sdk.factory import AgntcyFactory, ProtocolTypes
+from agntcy_app_sdk.protocols.a2a.protocol import A2AProtocol
 console = Console()
-logger = logging.getLogger("slim_client")
 # Set a2a.client logging to WARNING
 logging.getLogger("a2a.client").setLevel(logging.WARNING)
-logging.basicConfig(level=logging.WARNING)
+logger = logging.getLogger(__name__)
 
 # Default A2A topic for SLIM clients
 TOPIC = "default/default/agent-slim"
@@ -36,6 +37,40 @@ _skills_examples: list[str] = []
 _endpoint: Optional[str] = None
 _remote_card_raw: Optional[Union[str, AgentCard, dict]] = None
 _remote_card_card: Optional[AgentCard] = None
+_a2a_topic: Optional[str] = None
+
+
+def _slugify_segment(s: Optional[str]) -> str:
+    if not isinstance(s, str):
+        return "default"
+    v = s.strip().lower()
+    v = re.sub(r"[^a-z0-9]+", "-", v)
+    v = re.sub(r"-{2,}", "-", v).strip("-")
+    return v or "default"
+
+def _derive_valid_topic(card: Optional[AgentCard]) -> str:
+    base_topic = None
+    if card:
+        try:
+            base_topic = A2AProtocol.create_agent_topic(card)
+            logger.debug(f"_derive_valid_topic: base_topic from SDK={base_topic!r}")
+        except Exception as e:
+            logger.debug(f"_derive_valid_topic: failed to get topic via SDK: {e}")
+
+    # Always use default/default as prefix; compute only the final name segment
+    local_candidate: Optional[str] = None
+    if getattr(card, "name", None):
+        local_candidate = card.name
+    elif isinstance(base_topic, str) and base_topic:
+        # If SDK topic exists, take only its final segment
+        local_candidate = base_topic.rsplit("/", 1)[-1]
+    else:
+        local_candidate = "agent-slim"
+
+    local = _slugify_segment(local_candidate)
+    topic = f"default/default/{local}"
+    logger.debug(f"_derive_valid_topic: computed topic={topic!r}")
+    return topic
 
 
 async def _load_remote_card(remote_card: str) -> Union[AgentCard, str, dict]:
@@ -111,7 +146,10 @@ async def _ensure_client():
     if _client is not None:
         return
 
-    topic = TOPIC
+    topic = _a2a_topic or TOPIC
+    if not isinstance(topic, str) or topic.count("/") != 2:
+        logger.warning(f"_ensure_client: invalid agent_topic %r; falling back to default %r", topic, TOPIC)
+        topic = TOPIC
     _client = await _factory.create_client(
         ProtocolTypes.A2A.value, agent_topic=topic, transport=_transport
     )
@@ -159,7 +197,8 @@ def main(endpoint: str, remote_card: str, debug: bool = False):
     global _endpoint, _remote_card_raw, _agent_name, _skills_description, _skills_examples
     if debug:
         logging.getLogger().setLevel(logging.DEBUG)
-        logger.setLevel(logging.DEBUG)
+        logging.getLogger("agent_chat_cli").setLevel(logging.DEBUG)
+        logging.getLogger("agent_chat_cli.slim_client").setLevel(logging.DEBUG)
         logging.getLogger("agntcy_app_sdk").setLevel(logging.DEBUG)
 
     _endpoint = endpoint
@@ -183,11 +222,23 @@ def main(endpoint: str, remote_card: str, debug: bool = False):
     # Save normalized card for later topic creation
     globals()["_remote_card_card"] = card_obj
 
+    # Derive and normalize A2A topic from AgentCard
+    a2a_topic_local = _derive_valid_topic(card_obj)
+    globals()["_a2a_topic"] = a2a_topic_local
+    logger.debug(f"main: using a2a_topic={globals()['_a2a_topic']!r}")
+
     # Create transport early so failures surface before UI interaction
-    logger.debug(f"main: creating SLIM transport endpoint={_endpoint!r} name={TOPIC!r}")
+    # Build transport name safely from topic
+    topic_for_name = globals()["_a2a_topic"] or TOPIC
+    try:
+        org, namespace, local_name = topic_for_name.split("/", 2)
+    except Exception:
+        org, namespace, local_name = TOPIC.split("/", 2)
+    transport_name = f"{org}/{namespace}/{local_name}-client"
+    logger.debug(f"main: creating SLIM transport endpoint={_endpoint!r} name={transport_name!r}")
     global _transport
     if _transport is None:
-        _transport = _factory.create_transport("SLIM", endpoint=_endpoint, name="default/default/agent-slim-client")
+        _transport = _factory.create_transport("SLIM", endpoint=_endpoint, name=transport_name)
 
 
     # Safely derive UI fields
@@ -211,7 +262,8 @@ def main(endpoint: str, remote_card: str, debug: bool = False):
     globals()["_skills_description"] = skills_description_local
     globals()["_skills_examples"] = skills_examples_local
 
-    console.clear()
+    if not debug:
+        console.clear()
     logger.debug(f"main: printing detected banner for agent_name={(_agent_name or 'Agent')!r}")
     print(f"✅ SLIM Agent Card detected for \033[1m\033[32m{_agent_name or 'Agent'}\033[0m")
     asyncio.run(

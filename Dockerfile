@@ -15,4 +15,7 @@ COPY . /app
 # Install dependencies (no source code yet)
 RUN poetry install --no-interaction --no-root
 
-ENTRYPOINT ["poetry", "--quiet", "run", "python", "-m", "agent_chat_cli", "a2a"]
+ENV LOG_LEVEL=warning
+ENV AGENT_CHAT_PROTOCOL=a2a
+
+ENTRYPOINT ["poetry", "--quiet", "run", "python", "-m", "agent_chat_cli"]
