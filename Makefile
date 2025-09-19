@@ -44,15 +44,7 @@ clean:             ## Clean all build artifacts and cache
 
 ## ========== Environment Helpers ==========
 
-check-env:         ## Check if .env file exists
-	@if [ ! -f ".env" ]; then \
-		echo "Error: .env file not found."; exit 1; \
-	fi
-
 venv-activate = . .venv/bin/activate
-load-env = set -a && . .env && set +a
-venv-run = $(venv-activate) && $(load-env) &&
-
 ## ========== Install ==========
 
 install: setup-venv ## Install Python dependencies using Poetry
@@ -61,7 +53,7 @@ install: setup-venv ## Install Python dependencies using Poetry
 	@echo "Dependencies installed successfully."
 
 install-uv:        ## Install uv package manager
-	@$(venv-run) pip install uv
+	@$(venv-activate) pip install uv
 
 
 ## ========== Build & Lint ==========
@@ -78,16 +70,13 @@ ruff-fix: setup-venv ## Auto-fix lint issues with ruff
 ## ========== Clients ==========
 
 run-a2a-client: setup-venv build install ## Run A2A client script
-	@$(MAKE) check-env
-	@$(venv-run) AGENT_CHAT_PROTOCOL=a2a uv run python -m agent_chat_cli
+	@$(venv-activate) && AGENT_CHAT_PROTOCOL=a2a python agent_chat_cli
 
 run-mcp-client: setup-venv build install ## Run MCP client script
-	@$(MAKE) check-env
-	@$(venv-run) uv run python -m agent_chat_cli mcp
+	@$(venv-activate) uv run python -m agent_chat_cli mcp
 
 run-slim-client: setup-venv build install ## Run SLIM client script
-	@$(MAKE) check-env || true
-	@$(venv-run) AGENT_CHAT_PROTOCOL=slim uv run python -m agent_chat_cli
+	@$(venv-activate) AGENT_CHAT_PROTOCOL=slim uv run python -m agent_chat_cli
 
 ## ========== Docker Build ==========
 build-docker: ## Build Docker image for the agent
