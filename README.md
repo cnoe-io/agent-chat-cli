@@ -1,6 +1,6 @@
-# Welcome to the A2A/MCP Multi-Protocol Agentic Chat Client 🤖💬
+# Welcome to the A2A Agentic Chat Client 🤖💬
 
-Effortlessly interact with multiple protocols using a lightweight, intuitive command-line chat interface. Whether you're managing A2A or MCP agents, this tool has you covered!
+**🚀 Lightweight and fast A2A command-line chat interface.**
 
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
@@ -9,9 +9,10 @@ Effortlessly interact with multiple protocols using a lightweight, intuitive com
 
 ## ✨ Features
 
-- 🔌 Easy integration with multiple protocols (A2A, MCP)
+- 🔌 Easy integration with A2A
+- 🔗 Read and render A2A card on launch
+- 🔒 Support passing OAuth2 Bearer Token or Shared Key
 - 💬 Friendly and intuitive chat UI for the command-line interface
-- 🚀 Lightweight and fast
 - 🔄 Command history support
 
 ## 🚀 Usage
