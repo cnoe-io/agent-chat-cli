@@ -18,7 +18,7 @@ dependencies = [
 
 # Make it backwards compatible with commitizen
 [tool.poetry]
-version = "0.2.6"
+version = "0.2.7"
 
 [project.scripts]
 agent-chat-cli = "agent_chat_cli.__main__:cli"
