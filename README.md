@@ -1,6 +1,6 @@
-# Welcome to the A2A Agentic Chat Client 🤖💬
+# Welcome to the A2A CLI - Agentic Chat Client 🤖💬
 
-**🚀 Lightweight and fast A2A command-line chat interface.**
+### **🚀 A Lightweight and fast command-line chat interface.**
 
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue.svg)](https://www.python.org/)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue)](LICENSE)
