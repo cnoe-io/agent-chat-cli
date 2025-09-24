@@ -43,7 +43,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
-    { name = "a2a-sdk", specifier = "==0.2.16" },
+    { name = "a2a-sdk", specifier = ">=0.2" },
     { name = "agntcy-app-sdk", specifier = ">=0.1.0" },
     { name = "click", specifier = ">=8.2.1" },
     { name = "dotenv", specifier = ">=0.9.9" },

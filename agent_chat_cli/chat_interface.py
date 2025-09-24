@@ -24,8 +24,32 @@ custom_theme = Theme({
 
 console = Console(theme=custom_theme)
 
-async def spinner(msg: str = "⏳ Waiting for agent..."):
+# Event to signal that streaming has started (set by protocol client)
+_stream_start_event: asyncio.Event | None = None
+_spinner_cleared_event: asyncio.Event | None = None
+
+async def wait_spinner_cleared():
+    global _spinner_cleared_event
+    if _spinner_cleared_event is not None:
+        await _spinner_cleared_event.wait()
+
+def notify_streaming_started():
+    global _stream_start_event
+    if _stream_start_event is not None:
+        _stream_start_event.set()
+
+async def spinner(msg: str = "⏳ Waiting for agent...", stop_event: asyncio.Event | None = None, cleared_event: asyncio.Event | None = None):
     for frame in itertools.cycle(['|', '/', '-', '\\']):
+        if stop_event is not None and stop_event.is_set():
+            # Replace spinner char with an arrow on the same line
+            try:
+                sys.stdout.write(f"\r{msg} →")
+                sys.stdout.flush()
+            except Exception:
+                pass
+            if cleared_event is not None:
+                cleared_event.set()
+            break
         print(f"\r{msg} {frame}", end='', flush=True)
         await asyncio.sleep(0.1)
 
@@ -106,17 +130,26 @@ async def run_chat_loop(handle_user_input: Callable[[str], Awaitable[None]],
                     continue
                 if user_input:
                     readline.add_history(user_input)
-                    spinner_task = asyncio.create_task(spinner())
+                    stop_event = asyncio.Event()
+                    spinner_cleared_event = asyncio.Event()
+                    global _stream_start_event, _spinner_cleared_event
+                    _stream_start_event = stop_event
+                    _spinner_cleared_event = spinner_cleared_event
+                    spinner_task = asyncio.create_task(spinner(stop_event=stop_event, cleared_event=spinner_cleared_event))
                     try:
                         await handle_user_input(user_input)
                     except Exception as e:
                         console.print(f"[error]⚠️  An error occurred: {e}[/error]")
                     finally:
+                        stop_event.set()
                         spinner_task.cancel()
                         try:
                             await spinner_task
                         except asyncio.CancelledError:
                             pass
+                        finally:
+                            _stream_start_event = None
+                            _spinner_cleared_event = None
             except (KeyboardInterrupt, EOFError):
                 console.print("\n[agent]👋 Chat interrupted. Goodbye![/agent]")
                 break
