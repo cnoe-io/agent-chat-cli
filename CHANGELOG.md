@@ -1,3 +1,20 @@
+## 0.2.7 (2025-09-18)
+
+### Feat
+
+- add OAuth Bearer token authentication support
+- **slim**: initial slim implementation
+
+### Fix
+
+- **lint**: ruff check
+- **slim**: fail client if agent card is unavailable
+- **lint**: ruff check
+- **slim**: conditionally run slim based on env var and fix topic logic
+- **slim**: use default topic
+- **a2a-sdk**: pin a2a-sdk==0.2.16 to avoid breaking change in 0.3.0
+- **a2a-sdk**: pin a2a-sdk==0.2.16 to avoid breaking change in 0.3.0
+
 ## 0.2.5 (2025-07-11)
 
 ### Fix

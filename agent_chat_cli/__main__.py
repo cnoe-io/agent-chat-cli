@@ -122,7 +122,7 @@ def a2a(host, port, token, debug):
     if env_token:
       token = env_token
     else:
-      token = simple_prompt("[info]Enter token[/info] (optional)", default=None, password=False)
+      token = simple_prompt("[info]Enter token[/info] (optional)", default=None, password=True)
 
   console.print("🚀 [info]Launching A2A client...[/info]")
   if "A2A_HOST" not in os.environ:

@@ -161,10 +161,15 @@ def _flatten_text_from_message_dict(message: Any) -> str:
 
 
 
-async def handle_user_input(user_input: str):
+async def handle_user_input(user_input: str, token: str = None):
   debug_log(f"Received user input: {user_input}")
   try:
-    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0)) as httpx_client:
+    # Prepare headers for authentication if token is provided
+    headers = {}
+    if token:
+      headers['Authorization'] = f'Bearer {token}'
+
+    async with httpx.AsyncClient(timeout=httpx.Timeout(300.0), headers=headers) as httpx_client:
       debug_log(f"Connecting to agent at {AGENT_URL}")
       client = await A2AClient.get_client_from_agent_card_url(httpx_client, AGENT_URL)
       client.url = AGENT_URL  # Ensure the client uses the correct URL
@@ -293,7 +298,7 @@ def main(host, port, token, tls):
   # Clear the console and print a header
   console.clear()
   asyncio.run(run_chat_loop(
-    handle_user_input,
+    lambda user_input: handle_user_input(user_input, token),
     agent_name=agent_name,
     skills_description=skills_description,
     skills_examples=skills_examples
