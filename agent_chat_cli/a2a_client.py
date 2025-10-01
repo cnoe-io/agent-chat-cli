@@ -5,11 +5,12 @@ import os
 import asyncio
 import json
 import logging
+import sys
 from uuid import uuid4
 from typing import Any
 
 from rich.console import Console
-from agent_chat_cli.chat_interface import run_chat_loop, render_answer
+from agent_chat_cli.chat_interface import run_chat_loop, render_answer, notify_streaming_started, wait_spinner_cleared
 
 import httpx
 from a2a.client import A2AClient, A2ACardResolver
@@ -19,6 +20,10 @@ from a2a.types import (
   SendMessageRequest,
   MessageSendParams,
   AgentCard,
+  SendStreamingMessageRequest,  # ADD
+  # The following may exist depending on SDK version; safe to add if present:
+  # TaskStatusUpdateEvent,      # OPTIONAL (only if you want isinstance checks)
+  # TaskState,                  # OPTIONAL (for state comparisons)
 )
 import warnings
 
@@ -104,6 +109,58 @@ def extract_response_text(response) -> str:
 
   return ""
 
+def _flatten_text_from_message_dict(message: Any) -> str:
+  """
+  Given a message object/dict, return the concatenated text content.
+  Supports both {text: "..."} and {parts: [{kind|type: 'text', text: '...'}]} shapes.
+  """
+  try:
+    if hasattr(message, "model_dump"):
+      message = message.model_dump()
+    elif hasattr(message, "dict"):
+      message = message.dict()
+
+    if not isinstance(message, dict):
+      return ""
+
+    # Direct text on message
+    if isinstance(message.get("text"), str):
+      return message["text"]
+
+    # Parts-based text
+    parts = message.get("parts", [])
+    if not isinstance(parts, list):
+      return ""
+
+    texts: list[str] = []
+    for p in parts:
+      if not isinstance(p, dict):
+        continue
+
+      # Handle nested root payload (e.g., {'root': {'kind': 'text', 'text': '...'}})
+      root = p.get("root")
+      if isinstance(root, dict):
+        kind = root.get("kind") or root.get("type")
+        if kind == "text":
+          if isinstance(root.get("text"), str):
+            texts.append(root["text"])
+          elif isinstance(root.get("content"), str):
+            texts.append(root["content"])
+        continue
+
+      # Flat part payload
+      kind = p.get("kind") or p.get("type")
+      if kind == "text":
+        if isinstance(p.get("text"), str):
+          texts.append(p["text"])
+        elif isinstance(p.get("content"), str):
+          texts.append(p["content"])
+    return "".join(texts)
+  except Exception:
+    return ""
+
+
+
 async def handle_user_input(user_input: str, token: str = None):
   debug_log(f"Received user input: {user_input}")
   try:
@@ -121,24 +178,51 @@ async def handle_user_input(user_input: str, token: str = None):
       payload = create_send_message_payload(user_input)
       debug_log(f"Created payload with message ID: {payload['message']['messageId']}")
 
+      # Try streaming first
+      try:
+        streaming_request = SendStreamingMessageRequest(
+          id=uuid4().hex,
+          params=MessageSendParams(**payload),
+        )
+        debug_log(f"Sending streaming message to agent at {client.url}...")
+        started = False
+        async for chunk in client.send_message_streaming(streaming_request):
+          if not started:
+            notify_streaming_started()          # stop spinner; it will replace spinner with an arrow on same line
+            try:
+              await wait_spinner_cleared()      # wait until spinner finalized
+            except Exception:
+              await asyncio.sleep(0)            # best-effort fallback
+            sys.stdout.write("\n")              # start the LLM response on a new line
+            sys.stdout.flush()
+            started = True
+          event = chunk.root.result
+          if getattr(event, 'status', None):
+            text = _flatten_text_from_message_dict(event.status.message)
+            if text:
+              print(text, end="", flush=True)
+        print()  # ensure newline after streaming completes
+        return
+
+      except Exception as stream_err:
+        debug_log(f"Streaming not available or failed: {stream_err}. Falling back to non-streaming.")
+
+      # Fallback: non-streaming request
       request = SendMessageRequest(
         id=uuid4().hex,
         params=MessageSendParams(**payload)
       )
-      debug_log(f"Sending message to agent at {client.url}...")
-
+      debug_log(f"Sending non-streaming message to agent at {client.url}...")
       response: SendMessageResponse = await client.send_message(request)
-      debug_log("Received response from agent")
+      debug_log("Received response from agent (non-streaming)")
 
       if isinstance(response.root, SendMessageSuccessResponse):
         debug_log("Agent returned success response")
-        debug_log("Response JSON:")
-        debug_log(json.dumps(response.root.dict(), indent=2, default=str))
         text = extract_response_text(response)
-        debug_log(f"Extracted text (first 100 chars): {text[:100]}...")
         render_answer(text)
       else:
         print(f"❌ Agent returned a non-success response: {response.root}")
+
   except Exception as e:
     print(f"ERROR: Exception occurred: {str(e)}")
     raise
