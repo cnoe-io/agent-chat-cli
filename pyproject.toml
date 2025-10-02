@@ -13,7 +13,7 @@ dependencies = [
   "httpx-sse>=0.4.0",
   "rich>=14.0.0",
   "agntcy-app-sdk>=0.1.0",
-  "slim-bindings>=0.3.6"
+  "slim-bindings>=0.3.6",
 ]
 
 # Make it backwards compatible with commitizen
@@ -27,6 +27,13 @@ agent-chat-cli = "agent_chat_cli.__main__:cli"
 requires = ["poetry-core>=2.0.0,<3.0.0"]
 build-backend = "poetry.core.masonry.api"
 
+[dependency-groups]
+dev = [
+    "ruff>=0.13.3",
+]
+
 [tool.poetry.group.dev.dependencies]
 commitizen = "^4.8.3"
+pytest-asyncio = "^1.2.0"
+pytest-cov = "^7.0.0"
 

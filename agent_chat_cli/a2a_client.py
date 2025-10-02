@@ -3,7 +3,6 @@
 
 import os
 import asyncio
-import json
 import logging
 import sys
 from uuid import uuid4
