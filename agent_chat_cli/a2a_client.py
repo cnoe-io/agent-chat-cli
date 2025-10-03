@@ -184,23 +184,66 @@ async def handle_user_input(user_input: str, token: str = None):
           params=MessageSendParams(**payload),
         )
         debug_log(f"Sending streaming message to agent at {client.url}...")
-        started = False
+        first_content_received = False
+        chunk_count = 0
+        collected_text = ""
         async for chunk in client.send_message_streaming(streaming_request):
-          if not started:
+          chunk_count += 1
+          debug_log(f"Received streaming chunk #{chunk_count}: {type(chunk)}")
+
+          event = chunk.root.result
+          debug_log(f"Processing event: {type(event)}, has status: {hasattr(event, 'status')}")
+          debug_log(f"Event attributes: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+
+          # Handle different event types
+          text = ""
+          if getattr(event, 'status', None):
+            # Task or TaskStatusUpdateEvent with status
+            text = _flatten_text_from_message_dict(event.status.message)
+            debug_log(f"Extracted text from status: '{text}'")
+          elif hasattr(event, 'artifact') and event.artifact:
+            # TaskArtifactUpdateEvent with artifact (singular)
+            artifact = event.artifact
+            debug_log(f"Found artifact: {type(artifact)}, has parts: {hasattr(artifact, 'parts')}")
+            if hasattr(artifact, 'parts') and artifact.parts:
+              debug_log(f"Artifact has {len(artifact.parts)} parts")
+              for j, part in enumerate(artifact.parts):
+                debug_log(f"Part {j}: {type(part)}, attributes: {[attr for attr in dir(part) if not attr.startswith('_')]}")
+                if hasattr(part, 'text'):
+                  text += part.text
+                  debug_log(f"Added text from part.text: '{part.text}'")
+                elif hasattr(part, 'kind') and part.kind == 'text' and hasattr(part, 'text'):
+                  text += part.text
+                  debug_log(f"Added text from part.kind=text: '{part.text}'")
+                elif hasattr(part, 'root') and hasattr(part.root, 'text'):
+                  text += part.root.text
+                  debug_log(f"Added text from part.root.text: '{part.root.text}'")
+            else:
+              debug_log(f"Artifact: {artifact}")
+            debug_log(f"Extracted text from artifact: '{text}'")
+
+          # Only stop spinner when we have actual content to display
+          if text and not first_content_received:
             notify_streaming_started()          # stop spinner; it will replace spinner with an arrow on same line
             try:
               await wait_spinner_cleared()      # wait until spinner finalized
             except Exception:
               await asyncio.sleep(0)            # best-effort fallback
-            sys.stdout.write("\n")              # start the LLM response on a new line
+            sys.stdout.write("\n")              # start the streaming response on a new line
             sys.stdout.flush()
-            started = True
-          event = chunk.root.result
-          if getattr(event, 'status', None):
-            text = _flatten_text_from_message_dict(event.status.message)
-            if text:
-              print(text, end="", flush=True)
-        print()  # ensure newline after streaming completes
+            first_content_received = True
+          
+          # Show streaming text immediately AND collect it for final rendering
+          if text:
+            print(text, end="", flush=True)    # Show streaming text in real-time
+            collected_text += text
+        
+        debug_log(f"Streaming completed with {chunk_count} chunks")
+        
+        # Show final result in a beautiful markdown panel
+        if collected_text:
+          print("\n")  # Add some space before the final panel
+          render_answer(collected_text, agent_name="AI Platform Engineer")
         return
 
       except Exception as stream_err:
