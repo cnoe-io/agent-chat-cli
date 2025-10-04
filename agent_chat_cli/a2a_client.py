@@ -1,6 +1,33 @@
 # Copyright CNOE Contributors (https://cnoe.io)
 # SPDX-License-Identifier: Apache-2.0
 
+"""
+A2A (Agent-to-Agent) Client for Interactive Chat Interface
+
+This module provides a comprehensive client implementation for communicating with A2A agents
+through both streaming and non-streaming protocols. It features:
+
+- Real-time streaming responses with visual feedback (ASCII spinner)
+- Beautiful markdown rendering of agent responses
+- Support for multiple streaming event types (Task, TaskArtifactUpdateEvent, TaskStatusUpdateEvent)
+- Graceful fallback from streaming to non-streaming mode
+- Comprehensive error handling and debugging capabilities
+- Rich console interface with panels and formatting
+
+Key Components:
+- Agent card discovery and authentication
+- Streaming message handling with real-time display
+- Response text extraction from various event types
+- Visual feedback through animated spinners and formatted panels
+
+Environment Variables:
+- A2A_HOST: Agent host (default: localhost)
+- A2A_PORT: Agent port (default: 8000)
+- A2A_TLS: Enable TLS (default: false)
+- A2A_TOKEN: Authentication token (optional)
+- A2A_DEBUG_CLIENT: Enable debug logging (default: false)
+"""
+
 import os
 import asyncio
 import logging
@@ -19,10 +46,7 @@ from a2a.types import (
   SendMessageRequest,
   MessageSendParams,
   AgentCard,
-  SendStreamingMessageRequest,  # ADD
-  # The following may exist depending on SDK version; safe to add if present:
-  # TaskStatusUpdateEvent,      # OPTIONAL (only if you want isinstance checks)
-  # TaskState,                  # OPTIONAL (for state comparisons)
+  SendStreamingMessageRequest,
 )
 import warnings
 
@@ -61,11 +85,33 @@ console = Console()
 
 SESSION_CONTEXT_ID = uuid4().hex
 
-def debug_log(message: str):
+def debug_log(message: str) -> None:
+  """
+  Log debug messages when debug mode is enabled.
+
+  Args:
+    message: The debug message to log
+  """
   if DEBUG:
     print(f"DEBUG: {message}")
 
 def create_send_message_payload(text: str) -> dict[str, Any]:
+  """
+  Create a properly formatted message payload for A2A communication.
+
+  This function constructs the message structure required by the A2A protocol,
+  including user role, text content, unique message ID, and session context.
+
+  Args:
+    text: The user's input text to send to the agent
+
+  Returns:
+    A dictionary containing the formatted message payload with:
+    - message.role: Set to "user"
+    - message.parts: List containing the text content
+    - message.messageId: Unique identifier for this message
+    - message.contextId: Session context ID for conversation continuity
+  """
   return {
     "message": {
       "role": "user",
@@ -78,7 +124,25 @@ def create_send_message_payload(text: str) -> dict[str, Any]:
   }
 
 def extract_response_text(response) -> str:
+  """
+  Extract text content from A2A response objects (non-streaming mode).
+
+  This function handles various response formats and attempts to extract
+  meaningful text content from different parts of the response structure.
+  It supports both artifacts and status message formats.
+
+  Args:
+    response: The A2A response object (can be Pydantic model, dict, etc.)
+
+  Returns:
+    Extracted text content as a string, or empty string if no text found
+
+  Note:
+    This function is primarily used for non-streaming responses.
+    For streaming responses, use _flatten_text_from_message_dict instead.
+  """
   try:
+    # Convert response to dictionary format
     if hasattr(response, "model_dump"):
       response_data = response.model_dump()
     elif hasattr(response, "dict"):
@@ -90,12 +154,14 @@ def extract_response_text(response) -> str:
 
     result = response_data.get("result", {})
 
+    # Try to extract from artifacts first
     artifacts = result.get("artifacts")
     if artifacts and isinstance(artifacts, list) and artifacts[0].get("parts"):
       for part in artifacts[0]["parts"]:
         if part.get("kind") == "text":
           return part.get("text", "").strip()
 
+    # Fallback to status message
     message = result.get("status", {}).get("message", {})
     for part in message.get("parts", []):
       if part.get("kind") == "text":
@@ -110,10 +176,25 @@ def extract_response_text(response) -> str:
 
 def _flatten_text_from_message_dict(message: Any) -> str:
   """
-  Given a message object/dict, return the concatenated text content.
-  Supports both {text: "..."} and {parts: [{kind|type: 'text', text: '...'}]} shapes.
+  Extract and concatenate text content from message objects (streaming mode).
+
+  This function handles various message formats commonly found in streaming responses:
+  - Direct text fields: {text: "content"}
+  - Parts-based messages: {parts: [{kind: 'text', text: 'content'}]}
+  - Nested root structures: {parts: [{root: {kind: 'text', text: 'content'}}]}
+
+  Args:
+    message: Message object or dictionary containing text content
+
+  Returns:
+    Concatenated text content from all text parts, or empty string if none found
+
+  Note:
+    This function is designed for streaming message processing where text
+    may be split across multiple parts or nested in various structures.
   """
   try:
+    # Convert message to dictionary format
     if hasattr(message, "model_dump"):
       message = message.model_dump()
     elif hasattr(message, "dict"):
@@ -126,7 +207,7 @@ def _flatten_text_from_message_dict(message: Any) -> str:
     if isinstance(message.get("text"), str):
       return message["text"]
 
-    # Parts-based text
+    # Parts-based text extraction
     parts = message.get("parts", [])
     if not isinstance(parts, list):
       return ""
@@ -160,7 +241,34 @@ def _flatten_text_from_message_dict(message: Any) -> str:
 
 
 
-async def handle_user_input(user_input: str, token: str = None):
+async def handle_user_input(user_input: str, token: str = None) -> None:
+  """
+  Handle user input by sending it to the A2A agent and displaying the response.
+
+  This is the main function that orchestrates the entire communication flow:
+  1. Establishes connection to the A2A agent
+  2. Attempts streaming communication first (with real-time display)
+  3. Falls back to non-streaming mode if streaming fails
+  4. Displays responses in beautiful markdown panels
+  5. Provides visual feedback through animated spinners
+
+  The function supports both streaming and non-streaming modes:
+  - Streaming: Shows real-time text as it arrives, then final markdown panel
+  - Non-streaming: Shows spinner, then final markdown panel
+
+  Args:
+    user_input: The user's message/question to send to the agent
+    token: Optional authentication token for secure agent communication
+
+  Raises:
+    Exception: Re-raises any unhandled exceptions after logging them
+
+  Note:
+    This function handles three types of streaming events:
+    - Task: Initial task creation (usually empty content)
+    - TaskArtifactUpdateEvent: Contains the actual response content
+    - TaskStatusUpdateEvent: Status updates (usually empty content)
+  """
   debug_log(f"Received user input: {user_input}")
   try:
     # Prepare headers for authentication if token is provided
@@ -177,72 +285,89 @@ async def handle_user_input(user_input: str, token: str = None):
       payload = create_send_message_payload(user_input)
       debug_log(f"Created payload with message ID: {payload['message']['messageId']}")
 
-      # Try streaming first
+      # Try streaming first (preferred mode for real-time user experience)
       try:
+        # Create streaming request with unique ID and message payload
         streaming_request = SendStreamingMessageRequest(
           id=uuid4().hex,
           params=MessageSendParams(**payload),
         )
         debug_log(f"Sending streaming message to agent at {client.url}...")
-        first_content_received = False
-        chunk_count = 0
-        collected_text = ""
+
+        # Initialize streaming state variables
+        first_content_received = False  # Track when to stop spinner
+        chunk_count = 0                 # Debug counter for received chunks
+        collected_text = ""             # Accumulate all text for final markdown panel
+
+        # Process streaming response chunks as they arrive
         async for chunk in client.send_message_streaming(streaming_request):
           chunk_count += 1
           debug_log(f"Received streaming chunk #{chunk_count}: {type(chunk)}")
 
+          # Extract the actual event from the streaming response wrapper
           event = chunk.root.result
           debug_log(f"Processing event: {type(event)}, has status: {hasattr(event, 'status')}")
           debug_log(f"Event attributes: {[attr for attr in dir(event) if not attr.startswith('_')]}")
 
-          # Handle different event types
+          # Extract text content using duck typing approach (more flexible than isinstance)
           text = ""
+
+          # Handle events with status (Task, TaskStatusUpdateEvent)
           if getattr(event, 'status', None):
-            # Task or TaskStatusUpdateEvent with status
+            # These events typically contain status updates or initial task creation
             text = _flatten_text_from_message_dict(event.status.message)
             debug_log(f"Extracted text from status: '{text}'")
+
+          # Handle events with artifacts (TaskArtifactUpdateEvent) - contains actual response content
           elif hasattr(event, 'artifact') and event.artifact:
-            # TaskArtifactUpdateEvent with artifact (singular)
             artifact = event.artifact
             debug_log(f"Found artifact: {type(artifact)}, has parts: {hasattr(artifact, 'parts')}")
+
+            # Process artifact parts to extract text content
             if hasattr(artifact, 'parts') and artifact.parts:
               debug_log(f"Artifact has {len(artifact.parts)} parts")
               for j, part in enumerate(artifact.parts):
                 debug_log(f"Part {j}: {type(part)}, attributes: {[attr for attr in dir(part) if not attr.startswith('_')]}")
+
+                # Try different text extraction patterns based on part structure
                 if hasattr(part, 'text'):
+                  # Direct text attribute
                   text += part.text
                   debug_log(f"Added text from part.text: '{part.text}'")
                 elif hasattr(part, 'kind') and part.kind == 'text' and hasattr(part, 'text'):
+                  # Text part with kind discriminator
                   text += part.text
                   debug_log(f"Added text from part.kind=text: '{part.text}'")
                 elif hasattr(part, 'root') and hasattr(part.root, 'text'):
+                  # Nested text in root structure
                   text += part.root.text
                   debug_log(f"Added text from part.root.text: '{part.root.text}'")
             else:
               debug_log(f"Artifact: {artifact}")
             debug_log(f"Extracted text from artifact: '{text}'")
 
-          # Only stop spinner when we have actual content to display
+          # Visual feedback management: stop spinner only when we have actual content
           if text and not first_content_received:
-            notify_streaming_started()          # stop spinner; it will replace spinner with an arrow on same line
+            # Transition from spinner to streaming display
+            notify_streaming_started()          # Stop spinner; replaces with arrow (→) on same line
             try:
-              await wait_spinner_cleared()      # wait until spinner finalized
+              await wait_spinner_cleared()      # Wait for spinner animation to complete
             except Exception:
-              await asyncio.sleep(0)            # best-effort fallback
-            sys.stdout.write("\n")              # start the streaming response on a new line
+              await asyncio.sleep(0)            # Best-effort fallback if spinner cleanup fails
+            sys.stdout.write("\n")              # Start streaming response on a new line
             sys.stdout.flush()
             first_content_received = True
-          
-          # Show streaming text immediately AND collect it for final rendering
+
+          # Dual display strategy: real-time streaming + final markdown panel
           if text:
-            print(text, end="", flush=True)    # Show streaming text in real-time
-            collected_text += text
-        
+            print(text, end="", flush=True)    # Show streaming text immediately (no newlines)
+            collected_text += text             # Accumulate for final formatted display
+
         debug_log(f"Streaming completed with {chunk_count} chunks")
-        
-        # Show final result in a beautiful markdown panel
+
+        # Final presentation: render complete response in beautiful markdown panel
         if collected_text:
-          print("\n")  # Add some space before the final panel
+          print("\n")  # Add spacing between streaming text and final panel
           render_answer(collected_text, agent_name="AI Platform Engineer")
         return
 
