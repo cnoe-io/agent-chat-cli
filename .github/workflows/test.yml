@@ -1,24 +1,24 @@
 ---
-name: Ruff Linter
+name: Unit Tests
 
 on:
   push:
-    # Run superlinter on pushes to default branch
     branches:
       - main
-  # Run superlinter on pull request events
   pull_request:
 
 # Declare default permissions as read-only
 permissions: read-all
 
 jobs:
-  linter:
+  test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12", "3.13"]
     permissions:
       contents: read
       packages: read
-      statuses: write
     steps:
       - name: 🔒 harden runner
         uses: step-security/harden-runner@0634a2670c59f64b4a01f0f96f84700a4088b9f0 # v2.12.0
@@ -27,15 +27,24 @@ jobs:
       - uses: actions/checkout@85e6279cec87321a52edac9c87bce653a07cf6c2 # v4.1.7
         with:
           fetch-depth: 0
-      - name: Set up Python
+      - name: Set up Python ${{ matrix.python-version }}
         uses: actions/setup-python@v5
         with:
-          python-version: "3.13.2"
+          python-version: ${{ matrix.python-version }}
       - name: Install uv
         run: curl -LsSf https://astral.sh/uv/install.sh | sh
       - name: Add uv to PATH
         run: echo "$HOME/.cargo/bin" >> $GITHUB_PATH
       - name: Install dependencies
         run: uv sync
-      - name: Run ruff linter # python linting
-        run: make lint
+      - name: Run unit tests
+        run: make test
+      - name: Upload coverage reports
+        if: matrix.python-version == '3.13'
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./coverage.xml
+          fail_ci_if_error: false
+        env:
+          CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+

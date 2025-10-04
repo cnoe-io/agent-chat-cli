@@ -47,36 +47,36 @@ clean:             ## Clean all build artifacts and cache
 venv-activate = . .venv/bin/activate
 ## ========== Install ==========
 
-install: setup-venv ## Install Python dependencies using Poetry
+install: ## Install Python dependencies using uv
 	@echo "Installing dependencies..."
-	@$(venv-activate) && poetry install --no-interaction
+	@uv sync
 	@echo "Dependencies installed successfully."
 
 install-uv:        ## Install uv package manager
-	@$(venv-activate) pip install uv
+	@curl -LsSf https://astral.sh/uv/install.sh | sh
 
 
 ## ========== Build & Lint ==========
 
-build: setup-venv  ## Build the package using Poetry
-	@$(venv-activate) && poetry build
+build: ## Build the package using uv
+	@uv build
 
-lint: setup-venv   ## Lint code with ruff
-	@$(venv-activate) && poetry install && ruff check $(AGENT_PKG_NAME) tests
+lint: ## Lint code with ruff
+	@uv run ruff check $(AGENT_PKG_NAME) tests
 
-ruff-fix: setup-venv ## Auto-fix lint issues with ruff
-	@$(venv-activate) && ruff check $(AGENT_PKG_NAME) tests --fix
+ruff-fix: ## Auto-fix lint issues with ruff
+	@uv run ruff check $(AGENT_PKG_NAME) tests --fix
 
 ## ========== Clients ==========
 
-run-a2a-client: setup-venv build install ## Run A2A client script
-	@$(venv-activate) && AGENT_CHAT_PROTOCOL=a2a python agent_chat_cli
+run-a2a-client: install ## Run A2A client script
+	@AGENT_CHAT_PROTOCOL=a2a uv run python -m agent_chat_cli
 
-run-mcp-client: setup-venv build install ## Run MCP client script
-	@$(venv-activate) uv run python -m agent_chat_cli mcp
+run-mcp-client: install ## Run MCP client script
+	@uv run python -m agent_chat_cli mcp
 
-run-slim-client: setup-venv build install ## Run SLIM client script
-	@$(venv-activate) AGENT_CHAT_PROTOCOL=slim uv run python -m agent_chat_cli
+run-slim-client: install ## Run SLIM client script
+	@AGENT_CHAT_PROTOCOL=slim uv run python -m agent_chat_cli
 
 ## ========== Docker Build ==========
 build-docker: ## Build Docker image for the agent
@@ -85,21 +85,17 @@ build-docker: ## Build Docker image for the agent
 
 ## ========== Tests ==========
 
-test: setup-venv build ## Run tests using pytest and coverage
-	@$(venv-activate) && poetry install
-	@$(venv-activate) && poetry add pytest-asyncio pytest-cov --dev
-	@$(venv-activate) && pytest -v --tb=short --disable-warnings --maxfail=1 --ignore=evals --cov=$(AGENT_PKG_NAME) --cov-report=term --cov-report=xml
+test: install ## Run tests using pytest and coverage
+	@uv run pytest -v --tb=short --disable-warnings --maxfail=1 --ignore=evals --cov=$(AGENT_PKG_NAME) --cov-report=term --cov-report=xml
 
 ## ========== Release & Versioning ==========
-release: setup-venv  ## Bump version and create a release
-	@. .venv/bin/activate; poetry install
-	@. .venv/bin/activate; poetry add commitizen --dev
-	@. .venv/bin/activate; git tag -d stable || echo "No stable tag found."
-	@. .venv/bin/activate; cz changelog
+release: install ## Bump version and create a release
+	@git tag -d stable || echo "No stable tag found."
+	@uv run cz changelog
 	@git add CHANGELOG.md
 	@git commit -m "docs: update changelog"
-	@. .venv/bin/activate; cz bump --increment PATCH
-	@. .venv/bin/activate; git tag -f stable
+	@uv run cz bump --increment PATCH
+	@git tag -f stable
 	@echo "Version bumped and stable tag updated successfully."
 
 
