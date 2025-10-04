@@ -5,6 +5,7 @@ import os
 import asyncio
 import logging
 import sys
+import traceback
 from uuid import uuid4
 from typing import Any
 
@@ -57,6 +58,7 @@ if os.environ.get("A2A_TLS", "false").lower() in ["1", "true", "yes"]:
 else:
   AGENT_URL = f"http://{AGENT_HOST}:{AGENT_PORT}"
 DEBUG = os.environ.get("A2A_DEBUG_CLIENT", "false").lower() in ["1", "true", "yes"]
+print("============ DEBUG MODE ============") if DEBUG else None
 console = Console()
 
 SESSION_CONTEXT_ID = uuid4().hex
@@ -77,31 +79,85 @@ def create_send_message_payload(text: str) -> dict[str, Any]:
     }
   }
 
+def _convert_to_dict(obj: Any) -> Any:
+  """Convert pydantic models or similar objects to dictionaries recursively."""
+  if hasattr(obj, "model_dump"):
+    return obj.model_dump()
+  elif hasattr(obj, "dict"):
+    return obj.dict()
+  return obj
+
+def _extract_text_from_parts(parts: list) -> str:
+  """Extract text content from a list of parts, handling nested structures."""
+  if not isinstance(parts, list):
+    return ""
+  
+  texts = []
+  for p in parts:
+    p = _convert_to_dict(p)
+    if not isinstance(p, dict):
+      continue
+    
+    # Check for nested root structure (e.g., Part(root=TextPart(...)))
+    root = p.get("root")
+    if root is not None:
+      root = _convert_to_dict(root)
+      if isinstance(root, dict):
+        kind = root.get("kind") or root.get("type")
+        if kind == "text":
+          text_content = root.get("text") or root.get("content")
+          if isinstance(text_content, str):
+            texts.append(text_content)
+        continue
+    
+    # Fallback to flat structure
+    kind = p.get("kind") or p.get("type")  
+    if kind == "text":
+      text_content = p.get("text") or p.get("content")
+      if isinstance(text_content, str):
+        texts.append(text_content)
+    elif "text" in p and isinstance(p["text"], str):
+      # Handle legacy flat text structure
+      texts.append(p["text"])
+  
+  return "".join(texts)
+
+def _extract_text_from_artifact(artifact: Any) -> str:
+  """Extract text from an artifact object."""
+  artifact = _convert_to_dict(artifact)
+  if not isinstance(artifact, dict):
+    return ""
+  
+  parts = artifact.get("parts", [])
+  return _extract_text_from_parts(parts)
+
 def extract_response_text(response) -> str:
+  """Extract text from a response object, handling multiple response formats."""
   try:
-    if hasattr(response, "model_dump"):
-      response_data = response.model_dump()
-    elif hasattr(response, "dict"):
-      response_data = response.dict()
-    elif isinstance(response, dict):
-      response_data = response
-    else:
+    response_data = _convert_to_dict(response)
+    if not isinstance(response_data, dict):
       raise ValueError("Unsupported response type")
 
     result = response_data.get("result", {})
+    debug_log(f"Response result data: {result}")
 
+    # Try extracting from artifacts first
     artifacts = result.get("artifacts")
-    if artifacts and isinstance(artifacts, list) and artifacts[0].get("parts"):
-      for part in artifacts[0]["parts"]:
-        if part.get("kind") == "text":
-          return part.get("text", "").strip()
+    if artifacts and isinstance(artifacts, list):
+      for artifact in artifacts:
+        parts = artifact.get("parts", []) if isinstance(artifact, dict) else []
+        if parts:
+          text = _extract_text_from_parts(parts)
+          if text:
+            return text.strip()
 
+    # Fallback to status message
     message = result.get("status", {}).get("message", {})
-    for part in message.get("parts", []):
-      if part.get("kind") == "text":
-        return part.get("text", "").strip()
-      elif "text" in part:
-        return part["text"].strip()
+    if isinstance(message, dict):
+      parts = message.get("parts", [])
+      text = _extract_text_from_parts(parts)
+      if text:
+        return text.strip()
 
   except Exception as e:
     debug_log(f"Error extracting text: {str(e)}")
@@ -186,20 +242,32 @@ async def handle_user_input(user_input: str, token: str = None):
         debug_log(f"Sending streaming message to agent at {client.url}...")
         started = False
         async for chunk in client.send_message_streaming(streaming_request):
+          debug_log(f"Received streaming chunk: {chunk}")
           if not started:
             notify_streaming_started()          # stop spinner; it will replace spinner with an arrow on same line
             try:
               await wait_spinner_cleared()      # wait until spinner finalized
-            except Exception:
+            except Exception as e:
+              debug_log(traceback.format_exc())
+              debug_log("Exception while waiting for spinner to clear")
+              debug_log("Continuing without waiting for spinner to clear")
               await asyncio.sleep(0)            # best-effort fallback
             sys.stdout.write("\n")              # start the LLM response on a new line
             sys.stdout.flush()
             started = True
           event = chunk.root.result
-          if getattr(event, 'status', None):
-            text = _flatten_text_from_message_dict(event.status.message)
+          status = getattr(event, 'status', None)
+          debug_log("EVENT:  " + str(event))  # DEBUG
+          debug_log("STATUS:  " + str(status))  # DEBUG
+          if status:
+            text = _flatten_text_from_message_dict(status.message)
             if text:
               print(text, end="", flush=True)
+          elif status is None and hasattr(event, 'artifact'): # This happens when the agent returns final artifact
+            debug_log("ARTIFACT:  " + str(event.artifact))  # DEBUG
+            text = _extract_text_from_artifact(event.artifact)
+            if text:
+              render_answer(text)
         print()  # ensure newline after streaming completes
         return
 
