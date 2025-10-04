@@ -31,3 +31,11 @@ dev = [
     "pytest-cov>=7.0.0",
 ]
 
+[tool.commitizen]
+name = "cz_conventional_commits"
+tag_format = "$version"
+version_provider = "pep621"
+version_files = [
+    "agent_chat_cli/__init__.py:__version__"
+]
+
