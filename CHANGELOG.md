@@ -7,6 +7,7 @@
 
 ### Fix
 
+- update pyproject
 - lint
 - **merge**: merge with main
 - update README.md
