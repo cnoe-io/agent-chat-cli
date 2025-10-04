@@ -1,12 +1,11 @@
 [project]
 name = "agent-chat-cli"
-version = "0.2.8"
+version = "0.2.9"
 description = "Multi-Protocol (A2A/MCP) Agent Chat CLI Interface"
 authors = [{name = "Sri Aradhyula", email = "sraradhy@cisco.com"}]
 readme = "README.md"
 requires-python = ">=3.12,<4.0"
 dependencies = [
-  "a2a-sdk>=0.2",
   "click>=8.2.1",
   "dotenv>=0.9.9",
   "httpx>=0.28.1",
@@ -14,6 +13,7 @@ dependencies = [
   "rich>=14.0.0",
   "agntcy-app-sdk>=0.1.0",
   "slim-bindings>=0.3.6",
+  "a2a-sdk==0.2.16",
 ]
 
 [project.scripts]
