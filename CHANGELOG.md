@@ -1,8 +1,23 @@
+## Unreleased
+
+### Feat
+
+- improve A2A streaming response handling and add comprehensive tests
+- enhance A2A streaming response handling with improved artifact processing
+
+### Fix
+
+- lint
+- **merge**: merge with main
+- update README.md
+- update README.md
+
 ## 0.2.7 (2025-09-18)
 
 ### Feat
 
 - add OAuth Bearer token authentication support
+- **streaming**: implement streaming for a2a client
 - **slim**: initial slim implementation
 
 ### Fix
