@@ -82,6 +82,9 @@ if os.environ.get("A2A_TLS", "false").lower() in ["1", "true", "yes"]:
 else:
   AGENT_URL = f"http://{AGENT_HOST}:{AGENT_PORT}"
 DEBUG = os.environ.get("A2A_DEBUG_CLIENT", "false").lower() in ["1", "true", "yes"]
+if DEBUG:
+  logger.debug(f"====== DEBUG MODE - Agent URL: {AGENT_URL} ======")
+
 console = Console()
 
 SESSION_CONTEXT_ID = uuid4().hex
@@ -298,12 +301,15 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         # Initialize streaming state variables
         first_content_received = False  # Track when to stop spinner
         chunk_count = 0                 # Debug counter for received chunks
-        collected_text = ""             # Accumulate all text for final markdown panel
+        final_text = ""                 # Text for final markdown panel - Only when task is complete
+        all_text = ""                   # Text for final markdown panel - Accumulate all text (in case there are no final state)
+
 
         # Process streaming response chunks as they arrive
         async for chunk in client.send_message_streaming(streaming_request):
           chunk_count += 1
           debug_log(f"Received streaming chunk #{chunk_count}: {type(chunk)}")
+          debug_log(f"Chunk {chunk}")
 
           # Extract the actual event from the streaming response wrapper
           event = chunk.root.result
@@ -322,6 +328,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
             debug_log(f"Extracted text from status: '{text}'")
 
             if getattr(event, 'status', None) and event.status.state in [TaskState.working]:
+              debug_log(f"Task is in progress: {event.status.state}")
               intermediate_state = True
 
           # Handle events with artifacts (TaskArtifactUpdateEvent) - contains actual response content
@@ -367,15 +374,17 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           # Dual display strategy: real-time streaming + final markdown panel
           if text:
             print(text, end="", flush=True)    # Show streaming text immediately (no newlines)
-            if not intermediate_state:            # Avoid accumulating text during intermediate states
-              collected_text += text             # Accumulate for final formatted display
+            if not intermediate_state:         # Avoid accumulating text for intermediate states
+              final_text += text               # Accumulate for final formatted display
+            all_text += text                   # Always accumulate all text (in case there are no final states)
 
         debug_log(f"Streaming completed with {chunk_count} chunks")
 
         # Final presentation: render complete response in beautiful markdown panel
-        if collected_text:
+        text_to_render = final_text if final_text else all_text
+        if text_to_render:
           print("\n")  # Add spacing between streaming text and final panel
-          render_answer(collected_text, agent_name="AI Platform Engineer")
+          render_answer(text_to_render, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
         return
 
       except Exception as stream_err:
@@ -455,6 +464,7 @@ async def fetch_agent_card(host, port, token: str, tls: bool) -> AgentCard:
 def main(host, port, token, tls):
   # Fetch the agent card before running the chat loop
   agent_card = asyncio.run(fetch_agent_card(host, port, token, tls))
+  global agent_name
   agent_name = agent_card.name if hasattr(agent_card, "name") else "Agent"
   print(f"✅ A2A Agent Card detected for \033[1m\033[32m{agent_name}\033[0m")
   skills_description = ""
