@@ -48,6 +48,7 @@ from a2a.types import (
   AgentCard,
   SendStreamingMessageRequest,
 )
+from a2a.types import TaskState
 import warnings
 
 # Suppress protobuf version warnings
@@ -312,11 +313,16 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           # Extract text content using duck typing approach (more flexible than isinstance)
           text = ""
 
+          intermediate_state = False
+
           # Handle events with status (Task, TaskStatusUpdateEvent)
           if getattr(event, 'status', None):
             # These events typically contain status updates or initial task creation
             text = _flatten_text_from_message_dict(event.status.message)
             debug_log(f"Extracted text from status: '{text}'")
+
+            if getattr(event, 'status', None) and event.status.state in [TaskState.working]:
+              intermediate_state = True
 
           # Handle events with artifacts (TaskArtifactUpdateEvent) - contains actual response content
           elif hasattr(event, 'artifact') and event.artifact:
@@ -361,7 +367,8 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           # Dual display strategy: real-time streaming + final markdown panel
           if text:
             print(text, end="", flush=True)    # Show streaming text immediately (no newlines)
-            collected_text += text             # Accumulate for final formatted display
+            if not intermediate_state:            # Avoid accumulating text during intermediate states
+              collected_text += text             # Accumulate for final formatted display
 
         debug_log(f"Streaming completed with {chunk_count} chunks")
 
