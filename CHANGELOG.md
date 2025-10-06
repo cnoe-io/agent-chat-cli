@@ -1,3 +1,13 @@
+## Unreleased
+
+### Fix
+
+- better var name
+- agent-chat-cli can output text when task status is not complete
+- agent-chat-cli now handles intermediate task states
+
+## 0.2.9 (2025-10-04)
+
 ## 0.2.8 (2025-10-04)
 
 ### Feat
