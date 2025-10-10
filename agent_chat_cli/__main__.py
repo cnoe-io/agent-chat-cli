@@ -1,6 +1,5 @@
 #!/usr/bin/env python3
 
-import time
 import click
 import importlib.util
 import sys
@@ -123,8 +122,7 @@ def a2a(host, port, token, debug):
     if env_token:
       token = env_token
     else:
-      console.print("[warning]⚠️ Token not provided. Connecting without authentication.[/warning]. You can provide it using the --token option or set A2A_TOKEN env variable.")
-      time.sleep(1)
+      token = simple_prompt("[info]Enter token[/info] (optional)", default=None, password=True)
 
   console.print("🚀 [info]Launching A2A client...[/info]")
   if "A2A_HOST" not in os.environ:
