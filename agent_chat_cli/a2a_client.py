@@ -36,7 +36,7 @@ from uuid import uuid4
 from typing import Any
 
 from rich.console import Console
-from agent_chat_cli.chat_interface import run_chat_loop, render_answer, notify_streaming_started, wait_spinner_cleared
+from agent_chat_cli.chat_interface import clear_screen, run_chat_loop, render_answer, notify_streaming_started, wait_spinner_cleared
 
 import httpx
 from a2a.client import A2AClient, A2ACardResolver
@@ -373,17 +373,21 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
 
           # Dual display strategy: real-time streaming + final markdown panel
           if text:
-            print(text, end="", flush=True)    # Show streaming text immediately (no newlines)
             if not intermediate_state:         # Avoid accumulating text for intermediate states
               final_state_text += text               # Accumulate for final formatted display
             all_text += text                   # Always accumulate all text (in case there are no final states)
+            
+            clear_screen()
+            # Print the entire accumulated text so far
+            render_answer(all_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+
 
         debug_log(f"Streaming completed with {chunk_count} chunks")
 
         # Final presentation: render complete response in beautiful markdown panel
         text_to_render = final_state_text if final_state_text else all_text
         if text_to_render:
-          print("\n")  # Add spacing between streaming text and final panel
+          clear_screen()
           render_answer(text_to_render, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
         return
 
