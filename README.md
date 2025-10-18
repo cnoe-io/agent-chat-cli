@@ -63,16 +63,16 @@ docker run -it --network=host\
 ```bash
 # Run directly with uvx (no installation required)
 # Use env var to choose protocol (defaults to slim when omitted)
-AGENT_CHAT_PROTOCOL=a2a uvx https://github.com/cnoe-io/agent-chat-cli a2a
+AGENT_CHAT_PROTOCOL=a2a uvx git+https://github.com/cnoe-io/agent-chat-cli a2a
 ```
 
 ```bash
 # With custom configuration
-uvx https://github.com/cnoe-io/agent-chat-cli a2a --host your-agent-host --port 8080 --token your-token
+uvx git+https://github.com/cnoe-io/agent-chat-cli a2a --host your-agent-host --port 8080 --token your-token
 ```
 
 ```bash
-AGENT_CHAT_PROTOCOL=slim uvx https://github.com/cnoe-io/agent-chat-cli.git
+AGENT_CHAT_PROTOCOL=slim uvx git+https://github.com/cnoe-io/agent-chat-cli.git
 ```
 
 ### Local Development Usage
