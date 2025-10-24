@@ -7,6 +7,8 @@
 ### Fix
 
 - improve streaming response handling in A2A client
+- Update port number in README example
+- Add A2A_TLS=false to README examples
 - **docs**: update README with git protocol for uvx commands
 - **docs**: updates
 - render the streaming message
