@@ -46,7 +46,7 @@ A beautiful, interactive command-line interface for communicating with A2A (Agen
 # A2A mode (host-network may be required if your agent runs on the host)
 docker run -it --network=host \
   -e AGENT_CHAT_PROTOCOL=a2a \
-  -e A2A_HOST=localhost -e A2A_PORT=8000 \
+  -e A2A_HOST=localhost -e A2A_PORT=8000 -e A2A_TLS=false \
   ghcr.io/cnoe-io/agent-chat-cli:stable
 ```
 ### SLIM mode
@@ -68,7 +68,7 @@ AGENT_CHAT_PROTOCOL=a2a uvx git+https://github.com/cnoe-io/agent-chat-cli a2a
 
 ```bash
 # With custom configuration
-uvx git+https://github.com/cnoe-io/agent-chat-cli a2a --host your-agent-host --port 8080 --token your-token
+A2A_TLS=false uvx git+https://github.com/cnoe-io/agent-chat-cli a2a --host localhost --port 8080 --token your-token
 ```
 
 ```bash
