@@ -118,7 +118,7 @@ def count_display_lines(text: str, terminal_width: int = None) -> int:
   if terminal_width is None:
     try:
       terminal_width = shutil.get_terminal_size().columns
-    except:
+    except OSError:
       terminal_width = 80  # Fallback width
   
   lines = text.split('\n')
@@ -362,9 +362,6 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         final_state_text = ""           # Text for final markdown panel - Only when task is complete
         all_text = ""                   # Text for final markdown panel - Accumulate all text (in case there are no final state)
         
-        # Task notification tracking
-        current_notification_line = ""  # Current notification being displayed
-        
         # Simple deduplication tracking
         last_event_signature = ""       # Track last processed content to detect consecutive duplicates
         
@@ -450,7 +447,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                 debug_log(f"Skipping partial_result - already have streaming content ({len(streaming_content)} chars)")
                 continue
               else:
-                debug_log(f"Processing partial_result - no prior streaming content")
+                debug_log("Processing partial_result - no prior streaming content")
             
             elif artifact_name == 'streaming_result':
               # Track that we're receiving streaming content
@@ -482,8 +479,6 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                 
                 # Check if we've already displayed this notification (simple string check)
                 if notification_text.strip() not in displayed_task_notifications:
-                  current_notification_line = notification_text
-                  
                   # Stop spinner and move to new line for task notification
                   if not first_content_received:
                     notify_streaming_started()
@@ -532,7 +527,6 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                   # Store the clean notification text for precise removal
                   displayed_task_notifications.append(completion_text.strip())
                   task_notification_handled = True
-                  current_notification_line = completion_text
                   debug_log(f"Displayed task completion notification: {completion_text}")
                 else:
                   debug_log(f"Skipping duplicate task completion notification: {completion_text}")
