@@ -1,6 +1,6 @@
 [project]
 name = "agent-chat-cli"
-version = "0.2.10"
+version = "0.2.11"
 description = "Multi-Protocol (A2A/MCP) Agent Chat CLI Interface"
 authors = [{name = "Sri Aradhyula", email = "sraradhy@cisco.com"}]
 readme = "README.md"
