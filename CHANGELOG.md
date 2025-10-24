@@ -1,5 +1,19 @@
 ## Unreleased
 
+### Feat
+
+- enhance streaming behavior and add interactive input support
+
+### Fix
+
+- improve streaming response handling in A2A client
+- **docs**: update README with git protocol for uvx commands
+- **docs**: updates
+- render the streaming message
+- remove token prompt
+
+## 0.2.10 (2025-10-06)
+
 ### Fix
 
 - better var name

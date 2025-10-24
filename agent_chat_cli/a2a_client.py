@@ -32,6 +32,8 @@ import os
 import asyncio
 import logging
 import sys
+import re
+import shutil
 from uuid import uuid4
 from typing import Any
 
@@ -98,6 +100,62 @@ def debug_log(message: str) -> None:
   """
   if DEBUG:
     print(f"DEBUG: {message}")
+
+def count_display_lines(text: str, terminal_width: int = None) -> int:
+  """
+  Count the number of terminal lines that text will occupy when displayed.
+  
+  Args:
+    text: The text to measure
+    terminal_width: Terminal width (auto-detected if None)
+  
+  Returns:
+    Number of lines the text will occupy
+  """
+  if not text:
+    return 0
+    
+  if terminal_width is None:
+    try:
+      terminal_width = shutil.get_terminal_size().columns
+    except OSError:
+      terminal_width = 80  # Fallback width
+  
+  lines = text.split('\n')
+  total_lines = 0
+  
+  for line in lines:
+    if len(line) == 0:
+      total_lines += 1
+    else:
+      # Account for line wrapping
+      total_lines += (len(line) + terminal_width - 1) // terminal_width
+  
+  return total_lines
+
+def clear_lines(num_lines: int) -> None:
+  """
+  Clear the specified number of lines from the terminal by moving cursor up and clearing.
+  
+  Args:
+    num_lines: Number of lines to clear
+  """
+  if num_lines > 0:
+    # Safety: Don't try to clear more than 100 lines (reasonable limit)
+    safe_lines = min(num_lines, 100)
+    
+    # Move cursor up and clear each line
+    for i in range(safe_lines):
+      sys.stdout.write('\033[1A')  # Move cursor up one line
+      sys.stdout.write('\033[2K')  # Clear entire line
+    
+    # Position cursor at beginning of current line and flush
+    sys.stdout.write('\r')
+    sys.stdout.flush()
+    
+    # Small delay to ensure terminal operations complete
+    import time
+    time.sleep(0.01)
 
 def create_send_message_payload(text: str) -> dict[str, Any]:
   """
@@ -303,6 +361,17 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         chunk_count = 0                 # Debug counter for received chunks
         final_state_text = ""           # Text for final markdown panel - Only when task is complete
         all_text = ""                   # Text for final markdown panel - Accumulate all text (in case there are no final state)
+        
+        # Simple deduplication tracking
+        last_event_signature = ""       # Track last processed content to detect consecutive duplicates
+        
+        # Task notification tracking for precise removal from final output
+        displayed_task_notifications = []  # Track exact notifications shown to user for filtering
+        
+        # Streaming content tracking for in-place replacement
+        streaming_content = ""          # Accumulate all streamed content for line counting
+        lines_printed = 0               # Track total lines printed (notifications + streaming content)
+        user_question = user_input      # Preserve the original question for display
 
 
         # Process streaming response chunks as they arrive
@@ -315,6 +384,12 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           event = chunk.root.result
           debug_log(f"Processing event: {type(event)}, has status: {hasattr(event, 'status')}")
           debug_log(f"Event attributes: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+          
+          # Optional: Enhanced event debugging (uncomment for detailed debugging)
+          # event_type = type(event).__name__
+          # debug_log(f"Event type: {event_type}")
+          # if hasattr(event, 'artifact') and event.artifact:
+          #   debug_log(f"Artifact name: {getattr(event.artifact, 'name', 'unnamed')}")
 
           # Extract text content using duck typing approach (more flexible than isinstance)
           text = ""
@@ -359,8 +434,107 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
               debug_log(f"Artifact: {artifact}")
             debug_log(f"Extracted text from artifact: '{text}'")
 
-          # Visual feedback management: stop spinner only when we have actual content
-          if text and not first_content_received:
+          # Smart deduplication based on artifact type and streaming strategy
+          event_type = type(event).__name__
+          
+          # Skip partial_result if we've been streaming content
+          if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
+            artifact_name = event.artifact.name
+            
+            if artifact_name == 'partial_result':
+              # Skip partial_result entirely if we've received streaming content
+              if streaming_content.strip():
+                debug_log(f"Skipping partial_result - already have streaming content ({len(streaming_content)} chars)")
+                continue
+              else:
+                debug_log("Processing partial_result - no prior streaming content")
+            
+            elif artifact_name == 'streaming_result':
+              # Track that we're receiving streaming content
+              debug_log(f"Processing streaming_result chunk: {text[:50] if text else 'empty'}...")
+          
+          # Basic consecutive duplicate prevention (only for identical consecutive events)
+          if text and text.strip():
+            text_content = text.strip()
+            
+            # Skip only if exact same content from exact same event type consecutively
+            if text_content == last_event_signature:
+              debug_log(f"Skipping consecutive duplicate from {event_type}: {text_content[:50]}...")
+              continue
+            
+            last_event_signature = text_content
+          
+          # Task notification detection and handling via artifact types
+          task_notification_handled = False
+          
+          # Check for task notification artifacts
+          if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
+            artifact_name = event.artifact.name
+            debug_log(f"Processing artifact: {artifact_name} (event type: {event_type})")
+            
+            # Handle tool notification start
+            if artifact_name == 'tool_notification_start':
+              if text:
+                notification_text = text.strip()
+                
+                # Check if we've already displayed this notification (simple string check)
+                if notification_text.strip() not in displayed_task_notifications:
+                  # Stop spinner and move to new line for task notification
+                  if not first_content_received:
+                    notify_streaming_started()
+                    try:
+                      await wait_spinner_cleared()
+                    except Exception:
+                      await asyncio.sleep(0)
+                    first_content_received = True
+                    sys.stdout.write("\n")  # Move to new line after spinner
+                    sys.stdout.flush()
+                    lines_printed += 1  # Count newline after spinner
+                  
+                  # Display the task notification on new line
+                  print(notification_text)
+                  lines_printed += 1  # Count notification line
+                  # Store the clean notification text for precise removal
+                  displayed_task_notifications.append(notification_text.strip())
+                  task_notification_handled = True
+                  debug_log(f"Displayed task start notification: {notification_text}")
+                else:
+                  debug_log(f"Skipping duplicate task start notification: {notification_text}")
+                  task_notification_handled = True
+            
+            # Handle tool notification end
+            elif artifact_name == 'tool_notification_end':
+              if text:
+                completion_text = text.strip()
+                
+                # Check if we've already displayed this completion notification (simple string check)
+                if completion_text.strip() not in displayed_task_notifications:
+                  # Ensure spinner is stopped
+                  if not first_content_received:
+                    notify_streaming_started()
+                    try:
+                      await wait_spinner_cleared()
+                    except Exception:
+                      await asyncio.sleep(0)
+                    first_content_received = True
+                    sys.stdout.write("\n")  # Move to new line after spinner
+                    sys.stdout.flush()
+                    lines_printed += 1  # Count newline after spinner
+                  
+                  # Display completion notification on new line
+                  print(completion_text)
+                  lines_printed += 1  # Count notification line
+                  # Store the clean notification text for precise removal
+                  displayed_task_notifications.append(completion_text.strip())
+                  task_notification_handled = True
+                  debug_log(f"Displayed task completion notification: {completion_text}")
+                else:
+                  debug_log(f"Skipping duplicate task completion notification: {completion_text}")
+                  task_notification_handled = True
+          
+          
+          # Visual feedback management: stop spinner only when we have actual content (and not already handled)
+          if text and not first_content_received and not task_notification_handled:
             # Transition from spinner to streaming display
             notify_streaming_started()          # Stop spinner; replaces with arrow (→) on same line
             try:
@@ -369,22 +543,71 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
               await asyncio.sleep(0)            # Best-effort fallback if spinner cleanup fails
             sys.stdout.write("\n")              # Start streaming response on a new line
             sys.stdout.flush()
+            lines_printed += 1                   # Count the newline after spinner
             first_content_received = True
 
           # Dual display strategy: real-time streaming + final markdown panel
-          if text:
+          if text and not task_notification_handled:
             print(text, end="", flush=True)    # Show streaming text immediately (no newlines)
+            streaming_content += text          # Track for line counting
             if not intermediate_state:         # Avoid accumulating text for intermediate states
               final_state_text += text               # Accumulate for final formatted display
             all_text += text                   # Always accumulate all text (in case there are no final states)
+          elif text:
+            # For task notifications, still accumulate for final display but don't print immediately
+            if not intermediate_state:
+              final_state_text += text
+            all_text += text
 
         debug_log(f"Streaming completed with {chunk_count} chunks")
-
+        
+        # Calculate total lines used for in-place replacement  
+        total_lines = lines_printed  # Includes notification lines and newline after spinner
+        if streaming_content:
+          content_lines = count_display_lines(streaming_content)
+          total_lines += content_lines
+        
+        debug_log(f"Total lines to clear: {total_lines} (notifications: {lines_printed}, content: {count_display_lines(streaming_content) if streaming_content else 0})")
+        
         # Final presentation: render complete response in beautiful markdown panel
         text_to_render = final_state_text if final_state_text else all_text
+        
+        # Remove task notifications from final display to avoid duplication
         if text_to_render:
-          print("\n")  # Add spacing between streaming text and final panel
-          render_answer(text_to_render, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+          clean_text = text_to_render
+          
+          # Remove exact task notifications that were displayed during streaming
+          # Notifications are now stored as clean text (without extra newlines)
+          for notification in displayed_task_notifications:
+            if notification in clean_text:
+              clean_text = clean_text.replace(notification, "")
+              debug_log(f"Removed task notification from final text: {notification[:30]}...")
+          
+          # Clean up excessive newlines while preserving markdown structure
+          clean_text = re.sub(r'\n{3,}', '\n\n', clean_text)  # Max 2 consecutive newlines for markdown
+          clean_text = clean_text.strip()
+          
+          if clean_text:
+            # Clear all streamed content and replace with markdown panel (preserve original question)
+            if total_lines > 0:
+              # More conservative clearing - only clear if it seems reasonable
+              if total_lines <= 50:  # Safety limit
+                clear_lines(total_lines)
+                debug_log(f"Cleared {total_lines} lines for in-place replacement")
+                
+                # Re-display the original question to maintain context
+                print(f"💬 You: {user_question}")
+              else:
+                debug_log(f"Skipping clear - too many lines ({total_lines})")
+                # Still show question for consistency, just add more spacing
+                print(f"\n💬 You: {user_question}")
+            else:
+              # No clearing needed, but still show question for context
+              print(f"\n💬 You: {user_question}")
+            
+            render_answer(clean_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+            # render_answer handles its own spacing - no additional newlines needed
+            debug_log(f"Filtered {len(displayed_task_notifications)} task notifications from final output")
         return
 
       except Exception as stream_err:
@@ -402,7 +625,11 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
       if isinstance(response.root, SendMessageSuccessResponse):
         debug_log("Agent returned success response")
         text = extract_response_text(response)
-        render_answer(text)
+        
+        # Show original question for context (non-streaming fallback)
+        print(f"💬 You: {user_input}")
+        
+        render_answer(text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
       else:
         print(f"❌ Agent returned a non-success response: {response.root}")
 

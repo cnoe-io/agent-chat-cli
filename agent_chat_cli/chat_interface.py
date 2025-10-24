@@ -6,6 +6,7 @@ import os
 import re
 import readline
 import platform
+import signal
 import sys
 from typing import Callable, Awaitable
 
@@ -110,10 +111,41 @@ async def run_chat_loop(handle_user_input: Callable[[str], Awaitable[None]],
     except Exception as e:
         console.print(f"[warning]⚠️  Could not load history file: {e}[/warning]")
 
+    # Signal handler for graceful exit
+    def signal_handler(signum, frame):
+        if signum == signal.SIGTSTP:
+            # Save history before suspending
+            try:
+                readline.write_history_file(history_file)
+            except Exception:
+                pass
+            console.print(f"\n[agent]🛑 {agent_name} suspended. Use 'fg' to resume.[/agent]")
+            # Restore default handler and re-raise signal to actually suspend
+            signal.signal(signal.SIGTSTP, signal.SIG_DFL)
+            os.kill(os.getpid(), signal.SIGTSTP)
+        elif signum == signal.SIGQUIT:
+            console.print(f"\n[agent]👋 {agent_name} terminated. Goodbye![/agent]")
+            # Save history before exiting
+            try:
+                readline.write_history_file(history_file)
+            except Exception:
+                pass
+            sys.exit(0)
+        elif signum == signal.SIGCONT:
+            # Re-register SIGTSTP handler after resuming from suspension
+            signal.signal(signal.SIGTSTP, signal_handler)
+            console.print(f"[agent]▶️  {agent_name} resumed.[/agent]")
+    
+    # Register signal handlers  
+    if platform.system() != "Windows":  # Signal handling works differently on Windows
+        signal.signal(signal.SIGQUIT, signal_handler)  # Control+\ (quit)
+        signal.signal(signal.SIGTSTP, signal_handler)  # Control+Z (suspend)
+        signal.signal(signal.SIGCONT, signal_handler)  # Resume after suspension
+
     try:
         while True:
             try:
-                user_input = input("🧑‍💻 You: ").strip()
+                user_input = input("💬 You: ").strip()
                 if user_input.lower() in ["exit", "quit"]:
                     console.print(f"\n[agent]👋 Thank you for using {agent_name}. Goodbye![/agent]")
                     break
@@ -151,6 +183,7 @@ async def run_chat_loop(handle_user_input: Callable[[str], Awaitable[None]],
                             _stream_start_event = None
                             _spinner_cleared_event = None
             except (KeyboardInterrupt, EOFError):
+                # KeyboardInterrupt: Control+C, EOFError: Control+D
                 console.print("\n[agent]👋 Chat interrupted. Goodbye![/agent]")
                 break
     finally:

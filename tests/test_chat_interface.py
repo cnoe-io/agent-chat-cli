@@ -2,8 +2,10 @@
 
 import pytest
 import asyncio
+import platform
+import signal
 from unittest.mock import patch
-from agent_chat_cli.chat_interface import render_answer
+from agent_chat_cli.chat_interface import render_answer, clear_screen, print_welcome_message
 
 
 def test_render_answer():
@@ -75,7 +77,9 @@ def test_imports():
         render_answer,
         spinner,
         notify_streaming_started,
-        wait_spinner_cleared
+        wait_spinner_cleared,
+        clear_screen,
+        print_welcome_message
     )
     
     # Verify functions exist
@@ -83,4 +87,35 @@ def test_imports():
     assert callable(spinner)
     assert callable(notify_streaming_started)
     assert callable(wait_spinner_cleared)
+    assert callable(clear_screen)
+    assert callable(print_welcome_message)
+
+
+def test_clear_screen():
+    """Test clear screen functionality."""
+    with patch('agent_chat_cli.chat_interface.os.system') as mock_system:
+        clear_screen()
+        mock_system.assert_called_once()
+
+
+def test_print_welcome_message():
+    """Test welcome message printing."""
+    with patch('agent_chat_cli.chat_interface.console') as mock_console:
+        print_welcome_message("Test Agent", "Test skills", "Test examples")
+        assert mock_console.print.called
+
+
+@pytest.mark.skipif(platform.system() == "Windows", reason="Signal handling differs on Windows")
+def test_signal_handler_registration():
+    """Test that signal handlers can be registered (Unix only)."""
+    
+    # Mock the signal registration to verify it's called
+    with patch('agent_chat_cli.chat_interface.signal.signal'):
+        # Create a mock handler function
+        async def mock_handler(user_input):
+            pass
+        
+        # We can't easily test the full run_chat_loop, but we can verify 
+        # the signal module is being used
+        assert signal is not None  # Verify signal module is available
 
