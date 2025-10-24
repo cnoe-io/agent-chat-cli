@@ -68,7 +68,7 @@ AGENT_CHAT_PROTOCOL=a2a uvx git+https://github.com/cnoe-io/agent-chat-cli a2a
 
 ```bash
 # With custom configuration
-A2A_TLS=false uvx git+https://github.com/cnoe-io/agent-chat-cli a2a --host localhost --port 8080 --token your-token
+A2A_TLS=false uvx git+https://github.com/cnoe-io/agent-chat-cli a2a --host localhost --port 8000 --token your-token
 ```
 
 ```bash
