@@ -2,6 +2,18 @@
 
 ### Feat
 
+- add enhanced input handling and documentation
+- enhance A2A streaming response handling
+
+### Fix
+
+- update A2A client and enhanced input functionality
+- resolve import errors in test files
+
+## 0.2.12 (2025-10-24)
+
+### Feat
+
 - enhance streaming behavior and add interactive input support
 
 ### Fix
