@@ -90,7 +90,7 @@ def test_parse_structured_response_with_metadata():
     # Check for execution_plan
     if 'execution_plan' in structured:
         plan = structured['execution_plan']
-        print(f"✅ Execution Plan Found:")
+        print("✅ Execution Plan Found:")
         print(f"   Description: {plan.get('plan_description')}")
         print(f"   Agents: {plan.get('required_agents')}")
         print(f"   Tasks: {len(plan.get('tasks', []))}")
@@ -137,9 +137,9 @@ def test_parse_structured_response_with_metadata():
         print(f"      Description: {field_desc}")
         if field_values:
             print(f"      Options: {', '.join(field_values)}")
-            print(f"      Type: Dropdown")
+            print("      Type: Dropdown")
         else:
-            print(f"      Type: Text input")
+            print("      Type: Text input")
         print()
     
     print("=" * 70)

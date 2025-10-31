@@ -374,7 +374,6 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         # Streaming content tracking
         streaming_content = ""          # Accumulate all streamed content
         streaming_lines = 0             # Track terminal lines used by streaming content
-        user_question = user_input      # Preserve the original question for display
         
         # Execution plan tracking for separate display
         execution_plan_content = ""     # Store execution plan separately for final display
@@ -398,7 +397,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
             artifact_name = event.artifact.name
           
-          debug_log(f"=" * 80)
+          debug_log("=" * 80)
           debug_log(f"EVENT #{chunk_count}: Type={event_type}, Artifact={artifact_name}, Has_Status={hasattr(event, 'status')}")
           debug_log(f"Event attributes: {[attr for attr in dir(event) if not attr.startswith('_')]}")
           
@@ -460,7 +459,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
             
             if artifact_name == 'partial_result':
               # STEP 2: Capture and parse partial_result
-              debug_log(f"Step 2: Received partial_result event")
+              debug_log("Step 2: Received partial_result event")
               
               # Log event structure to understand what's available
               debug_log(f"Step 2: Event type: {type(event)}")
@@ -487,7 +486,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                   # If it's pure JSON, extract the message or relevant field
                   if isinstance(json_data, dict):
                     partial_result_text = json_data.get('message', partial_result_text)
-                    debug_log(f"Step 2: Parsed as JSON, extracted message field")
+                    debug_log("Step 2: Parsed as JSON, extracted message field")
                 except (json.JSONDecodeError, ValueError):
                   # Not pure JSON, it's mixed content - extract Section 3 (markdown after JSON blob)
                   sections = partial_result_text.split('{"status":', 1)
@@ -505,11 +504,11 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                         partial_result_text = section3_text.strip()
                         debug_log(f"Step 2: Extracted Section 3 (markdown) - {len(partial_result_text)} chars")
                       except json.JSONDecodeError:
-                        debug_log(f"Step 2: Could not parse embedded JSON, using full text")
+                        debug_log("Step 2: Could not parse embedded JSON, using full text")
                     else:
-                      debug_log(f"Step 2: Could not find JSON end, using full text")
+                      debug_log("Step 2: Could not find JSON end, using full text")
                   else:
-                    debug_log(f"Step 2: No JSON separator found, using text as-is")
+                    debug_log("Step 2: No JSON separator found, using text as-is")
               
               # Don't display partial_result during streaming - we'll use it in Step 3
               continue  # Skip displaying this chunk
@@ -545,12 +544,12 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                   debug_log(f"Rendered execution plan panel from update ({len(execution_plan_content)} chars)")
               
               # Don't display this in streaming
-              debug_log(f"Skipping execution_plan_update from streaming display")
+              debug_log("Skipping execution_plan_update from streaming display")
               continue  # Skip displaying
             
             elif artifact_name == 'execution_plan_streaming':
               # Don't display execution plan streaming - we'll show it in a box later
-              debug_log(f"Skipping execution_plan_streaming display - will render in box")
+              debug_log("Skipping execution_plan_streaming display - will render in box")
               continue  # Skip displaying these chunks
             
             elif artifact_name == 'streaming_result':
@@ -675,7 +674,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
           text_to_render = partial_result_text
         else:
-          debug_log(f"Step 2: No partial_result, using accumulated streaming text")
+          debug_log("Step 2: No partial_result, using accumulated streaming text")
           text_to_render = final_state_text if final_state_text else all_text
         
         # Clean up text for final display
@@ -705,11 +704,11 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
               # We have partial_result, so clear the streaming content
               debug_log(f"Step 3: Clearing {streaming_lines} lines of streaming content")
               clear_lines(streaming_lines)
-              debug_log(f"Step 3: Cleared streaming content, rendering final panel")
+              debug_log("Step 3: Cleared streaming content, rendering final panel")
             else:
               # No partial_result or no streaming to clear, just add spacing
               print("\n")
-              debug_log(f"Step 3: No clearing needed, appending final panel")
+              debug_log("Step 3: No clearing needed, appending final panel")
             
             # Execution plan and tool notifications stay visible
             # Streaming content is cleared, now show clean final panel

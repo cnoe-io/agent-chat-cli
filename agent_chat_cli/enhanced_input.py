@@ -140,7 +140,7 @@ def show_dropdown_selection(field_name: str, options: List[str]) -> Optional[str
                 console.print(f"[green]✓[/green] Matched: [bold]{matches[0]}[/bold]")
                 return matches[0]
             elif len(matches) > 1:
-                console.print(f"[yellow]⚠️  Ambiguous input. Multiple matches:[/yellow]")
+                console.print("[yellow]⚠️  Ambiguous input. Multiple matches:[/yellow]")
                 for match in matches:
                     console.print(f"  - {match}")
                 console.print("[yellow]Please be more specific.[/yellow]")
@@ -304,7 +304,7 @@ def show_multi_field_form(fields: List[Dict[str, Any]]) -> Optional[Dict[str, st
     """
     console.print()
     console.print(Panel(
-        f"[bold cyan]📋 Form Input[/bold cyan]\n[dim]Please provide the following information:[/dim]",
+        "[bold cyan]📋 Form Input[/bold cyan]\n[dim]Please provide the following information:[/dim]",
         border_style="cyan",
         padding=(1, 2)
     ))
