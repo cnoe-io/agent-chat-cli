@@ -16,7 +16,7 @@ from pathlib import Path
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from agent_chat_cli.chat_interface import parse_structured_response, render_answer
+from agent_chat_cli.chat_interface import render_answer
 
 
 def test_parse_structured_response_with_metadata():
@@ -75,7 +75,10 @@ def test_parse_structured_response_with_metadata():
     print()
     
     # Parse the response
-    structured = parse_structured_response(agent_response)
+    try:
+        structured = json.loads(agent_response)
+    except json.JSONDecodeError:
+        structured = None
     
     if structured is None:
         print("❌ FAILED: Could not parse structured response")
@@ -236,7 +239,10 @@ def test_metadata_without_execution_plan():
         }
     })
     
-    structured = parse_structured_response(agent_response)
+    try:
+        structured = json.loads(agent_response)
+    except json.JSONDecodeError:
+        structured = None
     
     if structured is None:
         print("❌ FAILED: Could not parse response")

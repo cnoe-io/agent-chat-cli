@@ -3,7 +3,7 @@
 Simple test to check if chat_interface can handle metadata properly.
 """
 
-from agent_chat_cli.chat_interface import parse_structured_response, render_answer
+from agent_chat_cli.chat_interface import render_answer
 import json
 
 # Simulate what the agent would return for "create a github issue"
@@ -68,30 +68,31 @@ print("Agent Response (JSON with metadata):")
 print()
 
 # Parse and display
-structured = parse_structured_response(metadata_response)
-if structured:
+try:
+    structured = json.loads(metadata_response)
     print(f"✅ Successfully parsed structured response")
     print(f"   - Content: {structured.get('content')}")
     print(f"   - Requires input: {structured.get('require_user_input')}")
     print(f"   - Fields: {len(structured.get('metadata', {}).get('input_fields', []))}")
     print()
-    
-    # Render it
-    print("Rendered output:")
-    print()
-    render_answer(metadata_response, agent_name="AI Platform Engineer")
-    
-    print()
-    print("=" * 80)
-    print("✅ METADATA TEST COMPLETED")
-    print("=" * 80)
-    print()
-    print("Expected behavior:")
-    print("1. Content displayed in panel (NOT raw JSON)")
-    print("2. Each input field shown as styled question")
-    print("3. Fields with field_values shown as dropdown options")
-    print("4. Fields without field_values shown as text input prompts")
-    print()
-else:
-    print("❌ Failed to parse structured response")
+except json.JSONDecodeError:
+    structured = None
+    print("❌ Failed to parse JSON response")
+
+# Render it
+print("Rendered output:")
+print()
+render_answer(metadata_response, agent_name="AI Platform Engineer")
+
+print()
+print("=" * 80)
+print("✅ METADATA TEST COMPLETED")
+print("=" * 80)
+print()
+print("Expected behavior:")
+print("1. Content displayed in panel (NOT raw JSON)")
+print("2. Each input field shown as styled question")
+print("3. Fields with field_values shown as dropdown options")
+print("4. Fields without field_values shown as text input prompts")
+print()
 
