@@ -32,7 +32,6 @@ import os
 import asyncio
 import logging
 import sys
-import re
 import shutil
 import json
 import ast
@@ -831,7 +830,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
             print(f"🔍 DEBUG: Contains 'ArgoCD' = {'ArgoCD' in final_response_text or 'argocd' in final_response_text.lower()}")
             print(f"🔍 DEBUG: Contains 'Supervisor' = {'Supervisor' in final_response_text}")
           else:
-            print(f"\n🔍 DEBUG: final_response_text is EMPTY!")
+            print("\n🔍 DEBUG: final_response_text is EMPTY!")
             print(f"🔍 DEBUG: partial_result_text length = {len(partial_result_text) if partial_result_text else 0}")
             print(f"🔍 DEBUG: response_stream_buffer length = {len(response_stream_buffer)}")
 
