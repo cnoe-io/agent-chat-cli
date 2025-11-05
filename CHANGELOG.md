@@ -1,37 +1,175 @@
-# Changelog
+## Unreleased
 
-All notable changes to agent-chat-cli will be documented in this file.
+### BREAKING CHANGE
 
-## [0.2.14] - 2025-11-05
+- None - all changes are backward compatible
 
-### Added
-- Version display on CLI startup (`🚀 agent-chat-cli v0.2.14`)
-- `--version` flag to display CLI version
+### Fix
 
-### Fixed
-- **Major**: Fixed duplicate response panel issue - final response now displayed only once
-- **Major**: Fixed tool notification text appearing in final response - status messages now excluded from response buffer
-- **Major**: Fixed streaming output accumulation - now properly accumulates with smart space insertion
-- Improved JSON payload parsing with proper brace matching for nested objects
-- Enhanced text sanitization to handle escaped newlines (`\n` → actual newlines)
+- streaming output improvements and test coverage enhancements
 
-### Changed
-- Streaming text chunks now accumulate with intelligent spacing
-- Final response preparation moved outside Live context to prevent duplicate display
-- Separated `final_response_text` from `response_markdown` for cleaner display logic
+### Refactor
 
-### Technical Details
-- Status messages (TaskStatusUpdateEvent) are now treated as metadata and excluded from response buffer
-- Only artifact text (streaming_result, partial_result, etc.) is processed for display
-- Smart space insertion between chunks: adds space only when boundaries lack whitespace
-- Improved brace matching algorithm for JSON extraction in sanitize_stream_text
+- support to-do lists
 
-## [0.2.13] - Previous
+## 0.2.13 (2025-10-31)
 
-### Features
-- Multi-protocol support (A2A/MCP)
-- Real-time streaming output with Rich UI
-- Execution plan, tool activity, and response panels
-- Server-Sent Events (SSE) support for A2A protocol
-- Token-by-token streaming display
+### Feat
 
+- add enhanced input handling and documentation
+- enhance A2A streaming response handling
+
+### Fix
+
+- update A2A client and enhanced input functionality
+- resolve import errors in test files
+
+## 0.2.12 (2025-10-24)
+
+### Feat
+
+- enhance streaming behavior and add interactive input support
+
+### Fix
+
+- improve streaming response handling in A2A client
+- Update port number in README example
+- Add A2A_TLS=false to README examples
+- **docs**: update README with git protocol for uvx commands
+- **docs**: updates
+- render the streaming message
+- remove token prompt
+
+## 0.2.10 (2025-10-06)
+
+### Fix
+
+- better var name
+- agent-chat-cli can output text when task status is not complete
+- agent-chat-cli now handles intermediate task states
+
+## 0.2.9 (2025-10-04)
+
+## 0.2.8 (2025-10-04)
+
+### Feat
+
+- improve A2A streaming response handling and add comprehensive tests
+- enhance A2A streaming response handling with improved artifact processing
+
+### Fix
+
+- update pyproject
+- lint
+- **merge**: merge with main
+- update README.md
+- update README.md
+
+## 0.2.7 (2025-09-18)
+
+### Feat
+
+- add OAuth Bearer token authentication support
+- **streaming**: implement streaming for a2a client
+- **slim**: initial slim implementation
+
+### Fix
+
+- **lint**: ruff check
+- **slim**: fail client if agent card is unavailable
+- **lint**: ruff check
+- **slim**: conditionally run slim based on env var and fix topic logic
+- **slim**: use default topic
+- **a2a-sdk**: pin a2a-sdk==0.2.16 to avoid breaking change in 0.3.0
+- **a2a-sdk**: pin a2a-sdk==0.2.16 to avoid breaking change in 0.3.0
+
+## 0.2.5 (2025-07-11)
+
+### Fix
+
+- **Dockerfile**: use poetry --quiet
+
+## 0.2.4 (2025-07-11)
+
+### Fix
+
+- **Dockerfile**: simplify docker run
+
+## 0.2.3 (2025-06-18)
+
+### Fix
+
+- client always uses 0.0.0.0
+
+## 0.2.2 (2025-06-18)
+
+### Fix
+
+- **pyproject.toml**: restore project.scripts
+- uv.lock
+
+## 0.2.1 (2025-06-18)
+
+### Feat
+
+- add cz and update changelog
+
+### Fix
+
+- commitzen
+- commitzen
+- commitzen
+- commitzen
+- commitzen
+- **poetry**: pyproject.toml to be commitizen compatible
+
+## 0.2.0 (2025-06-18)
+
+### Feat
+
+- add support for tls endpoints
+
+### Fix
+
+- pyproject.toml version
+- ruff lint
+- **clean-up**: remove get_available_tools
+
+## 0.0.4 (2025-06-17)
+
+### Fix
+
+- **httpx**: set to 300 second timeout for long agent operations
+- **httpx**: set to 300 second timeout for long agent operations
+
+## 0.0.2 (2025-06-10)
+
+### Fix
+
+- use A2A_HOST and A2A_PORT
+
+## 0.0.1 (2025-06-10)
+
+### Feat
+
+- add github actions to publish containers
+- read A2A agent card from CLI
+- add package executable
+- add package executable
+
+### Fix
+
+- **README**: update docker command
+- **README.md**: updates and tags
+- updates
+- updates and reconcile from main
+- updated message_id
+- update context_id
+- **httpx**: bump timeout to 120 seconds for longer requests
+- suppress extra logging by a2a client
+- update exception with EOFError
+- **a2**: event loop
+- update history and readme file
+- update python package agent-chat-cli
+- **MAINTAINERS.md**: updates
+- **README.md**: add demos

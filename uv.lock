@@ -28,7 +28,7 @@ wheels = [
 
 [[package]]
 name = "agent-chat-cli"
-version = "0.2.15"
+version = "0.2.16"
 source = { editable = "." }
 dependencies = [
     { name = "a2a-sdk" },

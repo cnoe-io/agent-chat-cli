@@ -39,19 +39,25 @@ def notify_streaming_started():
     if _stream_start_event is not None:
         _stream_start_event.set()
 
-async def spinner(msg: str = "⏳ Waiting for agent...", stop_event: asyncio.Event | None = None, cleared_event: asyncio.Event | None = None):
+async def spinner(
+    msg: str = "⏳ Waiting for agent...",
+    stop_event: asyncio.Event | None = None,
+    cleared_event: asyncio.Event | None = None,
+):
+    """
+    Show an animated spinner in the terminal using ASCII, not Rich. No flush.
+    """
     for frame in itertools.cycle(['|', '/', '-', '\\']):
         if stop_event is not None and stop_event.is_set():
             # Replace spinner char with an arrow on the same line
             try:
-                sys.stdout.write(f"\r{msg} →")
-                sys.stdout.flush()
+                print(f"\r{msg} →")
             except Exception:
                 pass
             if cleared_event is not None:
                 cleared_event.set()
             break
-        print(f"\r{msg} {frame}", end='', flush=True)
+        print(f"\r{msg} {frame}", end='')
         await asyncio.sleep(0.1)
 
 def render_answer(answer: str, agent_name: str = "Agent"):
@@ -135,8 +141,8 @@ async def run_chat_loop(handle_user_input: Callable[[str], Awaitable[None]],
             # Re-register SIGTSTP handler after resuming from suspension
             signal.signal(signal.SIGTSTP, signal_handler)
             console.print(f"[agent]▶️  {agent_name} resumed.[/agent]")
-    
-    # Register signal handlers  
+
+    # Register signal handlers
     if platform.system() != "Windows":  # Signal handling works differently on Windows
         signal.signal(signal.SIGQUIT, signal_handler)  # Control+\ (quit)
         signal.signal(signal.SIGTSTP, signal_handler)  # Control+Z (suspend)

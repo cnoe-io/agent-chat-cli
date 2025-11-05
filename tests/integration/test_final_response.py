@@ -2,6 +2,7 @@
 """Test to see what the final response actually is"""
 import asyncio
 import sys
+import pytest
 
 sys.path.insert(0, '/Users/sraradhy/cisco/eti/sre/cnoe/agent-chat-cli')
 
@@ -22,28 +23,29 @@ def mock_render_answer(answer, agent_name="Agent"):
     print(f"   Contains 'Supervisor': {'Supervisor' in answer}")
     print(f"   Contains 'Write_Todos': {'Write_Todos' in answer}")
 
+@pytest.mark.asyncio
 async def test_final_response():
     print("=" * 100)
     print("Testing what gets passed to render_answer()")
     print("=" * 100)
     print()
-    
+
     # Patch render_answer before importing
     import agent_chat_cli.chat_interface
     agent_chat_cli.chat_interface.render_answer = mock_render_answer
-    
+
     # Now import and run
     from agent_chat_cli.a2a_client import handle_user_input
-    
+
     try:
         await handle_user_input("show argocd version", token=None)
     except Exception as e:
         print(f"⚠️  Exception: {e}")
-    
+
     print("\n" + "=" * 100)
     print("FINAL ANALYSIS")
     print("=" * 100)
-    
+
     if rendered_responses:
         for i, resp in enumerate(rendered_responses, 1):
             print(f"\nResponse #{i}:")
@@ -57,7 +59,7 @@ async def test_final_response():
                 print(f"  Full text: {resp['answer']}")
     else:
         print("❌ render_answer was NEVER called!")
-    
+
     print("=" * 100)
 
 if __name__ == "__main__":

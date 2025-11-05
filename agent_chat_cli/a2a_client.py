@@ -158,10 +158,6 @@ def clear_lines(num_lines: int) -> None:
     sys.stdout.write('\r')
     sys.stdout.flush()
 
-    # Small delay to ensure terminal operations complete
-    import time
-    time.sleep(0.01)
-
 def format_execution_plan_text(raw_text: str) -> str:
   """Format execution plan text into a user-friendly markdown checklist."""
   if not raw_text:
@@ -601,26 +597,17 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         response_stream_buffer = ""
         response_markdown = ""  # Only used for Live dashboard (will stay empty for final response)
         streaming_markdown = ""
-
-        notify_streaming_started()
-        try:
-          await wait_spinner_cleared()
-        except Exception:
-          await asyncio.sleep(0)
+        spinner_stopped = False  # Track if we've stopped the spinner
+        live_started = False  # Track if Live dashboard has been initialized
+        live = None  # Will be initialized when execution plan arrives
 
         stream = client.send_message_streaming(streaming_request)
-        # Use Live with 3-second throttling to show progress while minimizing duplicates
-        # transient=False keeps the panels visible after streaming completes
-        with Live(build_dashboard(execution_markdown, tool_markdown, response_markdown, streaming_markdown),
-                  console=console,
-                  refresh_per_second=4,
-                  transient=False) as live:
 
-          def update_live() -> None:
+        def update_live() -> None:
+          if live is not None:
             live.update(build_dashboard(execution_markdown, tool_markdown, response_markdown, streaming_markdown))
 
-          update_live()
-          async for chunk in stream:
+        async for chunk in stream:
             chunk_count += 1
             debug_log(f"Received streaming chunk #{chunk_count}: {type(chunk)}")
             debug_log(f"Chunk {chunk}")
@@ -700,12 +687,44 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
               if artifact_name == 'execution_plan_update':
                 if text:
                   execution_markdown = format_execution_plan_text(text)
+                  # Stop spinner and start Live dashboard when execution plan arrives
+                  if not spinner_stopped:
+                    notify_streaming_started()
+                    try:
+                      await wait_spinner_cleared()
+                    except Exception:
+                      pass  # Spinner already cleared or not running
+                    spinner_stopped = True
+                  # Lazy initialize Live dashboard
+                  if not live_started:
+                    live = Live(build_dashboard(execution_markdown, tool_markdown, response_markdown, streaming_markdown),
+                               console=console,
+                               refresh_per_second=15,
+                               transient=False)
+                    live.start()
+                    live_started = True
                   update_live()
                 continue
 
               if artifact_name == 'execution_plan_status_update':
                 if text:
                   execution_markdown = format_execution_plan_text(text)
+                  # Stop spinner and start Live dashboard when execution plan arrives
+                  if not spinner_stopped:
+                    notify_streaming_started()
+                    try:
+                      await wait_spinner_cleared()
+                    except Exception:
+                      pass  # Spinner already cleared or not running
+                    spinner_stopped = True
+                  # Lazy initialize Live dashboard
+                  if not live_started:
+                    live = Live(build_dashboard(execution_markdown, tool_markdown, response_markdown, streaming_markdown),
+                               console=console,
+                               refresh_per_second=15,
+                               transient=False)
+                    live.start()
+                    live_started = True
                   update_live()
                 continue
 
@@ -713,6 +732,14 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                 continue
 
               if artifact_name == 'tool_notification_start' and text:
+                # Stop spinner if not already stopped (fallback in case no execution plan)
+                if not spinner_stopped:
+                  notify_streaming_started()
+                  try:
+                    await wait_spinner_cleared()
+                  except Exception:
+                    pass
+                  spinner_stopped = True
                 notification_text = summarize_tool_notification(text)
                 if notification_text and notification_text not in tool_seen:
                   tool_seen.add(notification_text)
@@ -748,6 +775,15 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
             # execution_plan_*: Already handled above with continue at lines 677, 682, 686
             # By this point, we only have streaming_result artifacts (status text is skipped)
             if text and artifact_name:
+              # Stop spinner if not already stopped (fallback for streaming content)
+              if not spinner_stopped:
+                notify_streaming_started()
+                try:
+                  await wait_spinner_cleared()
+                except Exception:
+                  pass
+                spinner_stopped = True
+
               clean_streaming_text = sanitize_stream_text(text)
               if not clean_streaming_text:
                 continue
@@ -786,53 +822,54 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
               update_live()
               break
 
-          debug_log(f"Streaming completed with {chunk_count} chunks")
+        debug_log(f"Streaming completed with {chunk_count} chunks")
 
-          # STEP 1 COMPLETE: Streaming lines tracked
-          debug_log(f"Step 1: Tracked streaming content - {len(response_stream_buffer)} chars")
+        # STEP 1 COMPLETE: Streaming lines tracked
+        debug_log(f"Step 1: Tracked streaming content - {len(response_stream_buffer)} chars")
 
-          # STEP 2 COMPLETE: Prepare final response for display outside Live context
-          # Prefer partial_result if available, otherwise use accumulated streaming text
-          if partial_result_text:
-            debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
-            debug_log(f"Step 2: partial_result_text first 200 chars: {partial_result_text[:200]}")
-            final_response_text = partial_result_text
-            debug_log(f"Step 2: final_response_text set to {len(final_response_text)} chars")
-          elif response_stream_buffer or final_state_text or all_text:
-            debug_log("Step 2: No partial_result, using accumulated streaming text")
-            text_to_render = final_state_text if final_state_text else all_text
-            if not text_to_render:
-              text_to_render = response_stream_buffer
+        # STEP 2 COMPLETE: Prepare final response for display outside Live context
+        # Prefer partial_result if available, otherwise use accumulated streaming text
+        if partial_result_text:
+          debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
+          debug_log(f"Step 2: partial_result_text first 200 chars: {partial_result_text[:200]}")
+          final_response_text = partial_result_text
+          debug_log(f"Step 2: final_response_text set to {len(final_response_text)} chars")
+        elif response_stream_buffer or final_state_text or all_text:
+          debug_log("Step 2: No partial_result, using accumulated streaming text")
+          text_to_render = final_state_text if final_state_text else all_text
+          if not text_to_render:
+            text_to_render = response_stream_buffer
 
-            if text_to_render:
-              # Use sanitize_stream_text for comprehensive cleaning
-              clean_text = sanitize_stream_text(text_to_render)
-              debug_log(f"Step 2: After sanitization: {len(clean_text)} chars")
-              debug_log(f"Step 2: First 200 chars: {clean_text[:200]}")
+          if text_to_render:
+            # Use sanitize_stream_text for comprehensive cleaning
+            clean_text = sanitize_stream_text(text_to_render)
+            debug_log(f"Step 2: After sanitization: {len(clean_text)} chars")
+            debug_log(f"Step 2: First 200 chars: {clean_text[:200]}")
 
-              if clean_text:
-                # Store for rendering outside Live context
-                final_response_text = clean_text
+            if clean_text:
+              # Store for rendering outside Live context
+              final_response_text = clean_text
 
-          # Clear streaming markdown and update one final time
-          # DON'T set response_markdown - keep it empty so it won't render in Live dashboard
-          streaming_markdown = ""
-          update_live()
-          # Keep the Live display visible for a moment
-          await asyncio.sleep(0.1)
+        # Clear streaming markdown and update one final time
+        # DON'T set response_markdown - keep it empty so it won't render in Live dashboard
+        streaming_markdown = ""
+        update_live()
 
-        # Debug output (only when DEBUG env var is set)
-        import os
-        if os.getenv("DEBUG_CLI"):
+        # Stop Live dashboard if it was started
+        if live_started and live is not None:
+          live.stop()
+
+        # Debug output (only when DEBUG mode is enabled)
+        if DEBUG:
           if final_response_text:
-            print(f"\n🔍 DEBUG: final_response_text length = {len(final_response_text)} chars")
-            print(f"🔍 DEBUG: First 200 chars = {final_response_text[:200]}")
-            print(f"🔍 DEBUG: Contains 'ArgoCD' = {'ArgoCD' in final_response_text or 'argocd' in final_response_text.lower()}")
-            print(f"🔍 DEBUG: Contains 'Supervisor' = {'Supervisor' in final_response_text}")
+            debug_log(f"final_response_text length = {len(final_response_text)} chars")
+            debug_log(f"First 200 chars = {final_response_text[:200]}")
+            debug_log(f"Contains 'ArgoCD' = {'ArgoCD' in final_response_text or 'argocd' in final_response_text.lower()}")
+            debug_log(f"Contains 'Supervisor' = {'Supervisor' in final_response_text}")
           else:
-            print("\n🔍 DEBUG: final_response_text is EMPTY!")
-            print(f"🔍 DEBUG: partial_result_text length = {len(partial_result_text) if partial_result_text else 0}")
-            print(f"🔍 DEBUG: response_stream_buffer length = {len(response_stream_buffer)}")
+            debug_log("final_response_text is EMPTY!")
+            debug_log(f"partial_result_text length = {len(partial_result_text) if partial_result_text else 0}")
+            debug_log(f"response_stream_buffer length = {len(response_stream_buffer)}")
 
         # Final render outside Live context - use final_response_text
         if final_response_text:
@@ -840,9 +877,8 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         return
 
       except Exception as stream_err:
-        import os
-        if os.getenv("DEBUG_CLI"):
-          print(f"\n❌ EXCEPTION in streaming: {type(stream_err).__name__}: {stream_err}")
+        if DEBUG:
+          debug_log(f"EXCEPTION in streaming: {type(stream_err).__name__}: {stream_err}")
           import traceback
           traceback.print_exc()
         debug_log(f"Streaming not available or failed: {stream_err}. Falling back to non-streaming.")
