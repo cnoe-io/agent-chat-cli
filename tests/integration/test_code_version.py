@@ -1,7 +1,12 @@
 #!/usr/bin/env python3
 """Test to verify which version of the code is actually loaded"""
 import sys
-sys.path.insert(0, '/Users/sraradhy/cisco/eti/sre/cnoe/agent-chat-cli')
+import os
+
+# Add the parent directory to the path dynamically
+script_dir = os.path.dirname(os.path.abspath(__file__))
+project_root = os.path.dirname(os.path.dirname(script_dir))
+sys.path.insert(0, project_root)
 
 print("=" * 100)
 print("CODE VERSION CHECK")

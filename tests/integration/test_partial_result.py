@@ -4,12 +4,14 @@ import asyncio
 import sys
 from uuid import uuid4
 import httpx
+import pytest
 
 sys.path.insert(0, '/Users/sraradhy/cisco/eti/sre/cnoe/agent-chat-cli')
 
 from a2a.client import A2AClient
 from a2a.types import SendStreamingMessageRequest, MessageSendParams
 
+@pytest.mark.asyncio
 async def test_partial_result_display():
     agent_url = "http://localhost:8000"
     query = "show argocd version"
