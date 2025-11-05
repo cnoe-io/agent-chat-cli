@@ -70,7 +70,7 @@ print()
 # Parse and display
 try:
     structured = json.loads(metadata_response)
-    print(f"✅ Successfully parsed structured response")
+    print("✅ Successfully parsed structured response")
     print(f"   - Content: {structured.get('content')}")
     print(f"   - Requires input: {structured.get('require_user_input')}")
     print(f"   - Fields: {len(structured.get('metadata', {}).get('input_fields', []))}")

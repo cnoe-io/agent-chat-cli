@@ -9,7 +9,7 @@
 	build setup-venv activate-venv install run \
 	help clean clean-pyc clean-venv clean-build-artifacts \
 	install-uv \
-	run-a2a-client run-mcp-client test \
+	run-a2a-client run-mcp-client test test-integration \
 	check-env lint ruff-fix \
 	add-copyright-license-headers
 
@@ -69,7 +69,7 @@ ruff-fix: ## Auto-fix lint issues with ruff
 
 ## ========== Clients ==========
 
-run-a2a-client: install ## Run A2A client script
+run-a2a-client: clean-pyc install ## Run A2A client script (cleans cache first)
 	@AGENT_CHAT_PROTOCOL=a2a uv run python -m agent_chat_cli
 
 run-mcp-client: install ## Run MCP client script
@@ -85,8 +85,12 @@ build-docker: ## Build Docker image for the agent
 
 ## ========== Tests ==========
 
-test: install ## Run tests using pytest and coverage
-	@uv run pytest -v --tb=short --disable-warnings --maxfail=1 --ignore=evals --cov=$(AGENT_PKG_NAME) --cov-report=term --cov-report=xml
+test: install ## Run unit tests (excludes integration tests)
+	@uv run pytest -v --tb=short --disable-warnings --maxfail=1 --ignore=evals --ignore=tests/integration --cov=$(AGENT_PKG_NAME) --cov-report=term --cov-report=xml
+
+test-integration: install ## Run integration tests (requires live agents)
+	@echo "Running integration tests (requires agents running on localhost:8000)..."
+	@uv run pytest -v tests/integration --tb=short
 
 ## ========== Release & Versioning ==========
 release: install ## Bump version and create a release

@@ -32,15 +32,17 @@ import os
 import asyncio
 import logging
 import sys
-import re
 import shutil
 import json
+import ast
 from uuid import uuid4
 from typing import Any
 
-from rich.console import Console
+from rich.console import Console, Group
 from rich.panel import Panel
 from rich.markdown import Markdown
+from rich.text import Text
+from rich.live import Live
 from agent_chat_cli.chat_interface import run_chat_loop, render_answer, notify_streaming_started, wait_spinner_cleared
 
 import httpx
@@ -107,58 +109,281 @@ def debug_log(message: str) -> None:
 def count_display_lines(text: str, terminal_width: int = None) -> int:
   """
   Count the number of terminal lines that text will occupy when displayed.
-  
+
   Args:
     text: The text to measure
     terminal_width: Terminal width (auto-detected if None)
-  
+
   Returns:
     Number of lines the text will occupy
   """
   if not text:
     return 0
-    
+
   if terminal_width is None:
     try:
       terminal_width = shutil.get_terminal_size().columns
     except OSError:
       terminal_width = 80  # Fallback width
-  
+
   lines = text.split('\n')
   total_lines = 0
-  
+
   for line in lines:
     if len(line) == 0:
       total_lines += 1
     else:
       # Account for line wrapping
       total_lines += (len(line) + terminal_width - 1) // terminal_width
-  
+
   return total_lines
 
 def clear_lines(num_lines: int) -> None:
   """
   Clear the specified number of lines from the terminal by moving cursor up and clearing.
-  
+
   Args:
     num_lines: Number of lines to clear
   """
   if num_lines > 0:
     # Safety: Don't try to clear more than 100 lines (reasonable limit)
     safe_lines = min(num_lines, 100)
-    
+
     # Move cursor up and clear each line
     for i in range(safe_lines):
       sys.stdout.write('\033[1A')  # Move cursor up one line
       sys.stdout.write('\033[2K')  # Clear entire line
-    
+
     # Position cursor at beginning of current line and flush
     sys.stdout.write('\r')
     sys.stdout.flush()
-    
+
     # Small delay to ensure terminal operations complete
     import time
     time.sleep(0.01)
+
+def format_execution_plan_text(raw_text: str) -> str:
+  """Format execution plan text into a user-friendly markdown checklist."""
+  if not raw_text:
+    return raw_text
+
+  # If it already contains bullet emojis, assume it's formatted
+  stripped = raw_text.strip()
+  if stripped.startswith('- ✅') or stripped.startswith('✅') or '📋' in stripped:
+    return raw_text
+
+  heading = "📋 **Execution Plan**"
+  if 'Updated' in raw_text and 'todo list' in raw_text:
+    heading = "📋 **Execution Plan (updated)**"
+
+  list_start = raw_text.find('[')
+  list_end = raw_text.rfind(']')
+  if list_start == -1 or list_end == -1 or list_end <= list_start:
+    return raw_text
+
+  list_segment = raw_text[list_start:list_end + 1]
+
+  try:
+    todos = ast.literal_eval(list_segment)
+    if not isinstance(todos, list):
+      return raw_text
+  except Exception:
+    return raw_text
+
+  status_emoji = {
+    'in_progress': '⏳',
+    'completed': '✅',
+    'pending': '📋',
+  }
+
+  lines = [heading, ""]
+  for item in todos:
+    if not isinstance(item, dict):
+      continue
+    content = item.get('content') or item.get('task') or "(no description)"
+    status = (item.get('status') or '').lower()
+    emoji = status_emoji.get(status, '•')
+    lines.append(f"- {emoji} {content}")
+
+  if len(lines) <= 2:
+    return raw_text
+
+  return "\n".join(lines)
+
+
+def summarize_tool_notification(raw_text: str) -> str:
+  if not raw_text:
+    return ""
+
+  text = raw_text.strip()
+  if "response=" in text:
+    text = text.split("response=", 1)[0].strip()
+
+  # Safely get first line, handle empty text
+  lines = text.splitlines()
+  if lines:
+    text = lines[0].strip()
+  else:
+    return ""  # Return empty string if no content
+
+  max_len = 160
+  if len(text) > max_len:
+    text = text[:max_len].rstrip() + "…"
+
+  return text
+
+
+def sanitize_stream_text(raw_text: str) -> str:
+  """Remove status payloads and extract meaningful streaming text."""
+  if not raw_text:
+    return ""
+
+  text = raw_text.replace("\r", "")
+
+  # Try direct JSON decode first
+  try:
+    data = json.loads(text)
+    if isinstance(data, dict):
+      message = data.get("message") or data.get("text")
+      if isinstance(message, str):
+        return message.strip()
+  except (json.JSONDecodeError, TypeError):
+    pass
+
+  cleaned_parts: list[str] = []
+  remaining = text
+
+  while '{"status":' in remaining:
+    before, after = remaining.split('{"status":', 1)
+    if before.strip():
+      cleaned_parts.append(before.strip())
+
+    # Find the matching closing brace for the JSON object
+    brace_count = 1
+    brace_index = -1
+    for i, char in enumerate(after):
+      if char == '{':
+        brace_count += 1
+      elif char == '}':
+        brace_count -= 1
+        if brace_count == 0:
+          brace_index = i
+          break
+
+    if brace_index == -1:
+      # No matching brace, remaining text is not valid JSON
+      if remaining.strip() and remaining.strip() != text.strip():
+        cleaned_parts.append(remaining.strip())
+      break
+
+    json_candidate = '{"status":' + after[:brace_index + 1]
+    trailing = after[brace_index + 1:]
+
+    try:
+      payload = json.loads(json_candidate)
+      message = payload.get("message") if isinstance(payload, dict) else None
+      if isinstance(message, str) and message.strip():
+        # The message might have escaped newlines, convert them
+        clean_message = message.replace('\\n', '\n').strip()
+        if clean_message:
+          cleaned_parts.append(clean_message)
+    except json.JSONDecodeError:
+      # If JSON parsing fails, just keep the before part
+      pass
+
+    remaining = trailing
+
+  if remaining.strip():
+    cleaned_parts.append(remaining.strip())
+
+  if not cleaned_parts:
+    return text.strip()
+
+  # Deduplicate consecutive identical sections
+  deduped: list[str] = []
+  for part in cleaned_parts:
+    if not deduped or part != deduped[-1]:
+      deduped.append(part)
+
+  # Use first non-duplicate part if we have both text and JSON message
+  # (they're often duplicates, prefer the cleaner JSON message version)
+  if len(deduped) >= 2:
+    # If we have the same content with/without JSON formatting, prefer the formatted one
+    return deduped[-1] if len(deduped[-1]) >= len(deduped[0]) else deduped[0]
+
+  return "\n\n".join(deduped).strip()
+
+
+def build_dashboard(execution_md: str, tool_md: str, response_md: str, streaming_md: str = "") -> Group:
+  panels = []
+
+  # Get terminal height to calculate available space
+  try:
+    terminal_height = shutil.get_terminal_size().lines
+  except OSError:
+    terminal_height = 24  # Fallback to standard terminal height
+
+  # Reserve space for panel borders and padding (rough estimate)
+  PANEL_OVERHEAD_PER_PANEL = 4  # 2 for border + 2 for padding
+  reserved_lines = 0
+
+  if execution_md:
+    exec_lines = len(execution_md.split('\n'))
+    reserved_lines += exec_lines + PANEL_OVERHEAD_PER_PANEL
+    panels.append(Panel(
+      Markdown(execution_md),
+      title="🎯 Execution Plan",
+      border_style="cyan",
+      padding=(1, 2),
+    ))
+
+  if tool_md:
+    tool_lines = len(tool_md.split('\n'))
+    reserved_lines += tool_lines + PANEL_OVERHEAD_PER_PANEL
+    panels.append(Panel(
+      Markdown(tool_md),
+      title="🔧 Tool Activity",
+      border_style="magenta",
+      padding=(1, 2),
+    ))
+
+  if streaming_md:
+    # Calculate max lines for streaming output based on remaining screen space
+    available_lines = terminal_height - reserved_lines - PANEL_OVERHEAD_PER_PANEL - 5  # 5 for buffer
+    max_streaming_lines = max(5, available_lines)  # At least 5 lines
+
+    streaming_lines = streaming_md.split('\n')
+
+    # Debug: log the calculation
+    if DEBUG:
+      debug_log(f"Terminal height: {terminal_height}, Reserved: {reserved_lines}, Max streaming: {max_streaming_lines}, Actual lines: {len(streaming_lines)}")
+
+    if len(streaming_lines) > max_streaming_lines:
+      truncated_md = "...\n\n" + "\n".join(streaming_lines[-max_streaming_lines:])
+    else:
+      truncated_md = streaming_md
+
+    panels.append(Panel(
+      Text(truncated_md),
+      title="📝 Streaming Output",
+      border_style="yellow",
+      padding=(1, 2),
+    ))
+
+  if response_md:
+    panels.append(Panel(
+      Markdown(response_md),
+      title="🤖 AI Platform Engineer Response",
+      border_style="green",
+      padding=(1, 2),
+    ))
+
+  # Don't show anything if no panels - cleaner UX
+  if not panels:
+    # Return empty group - the "⏳ Waiting for agent..." message already appears above
+    return Group()
+
+  return Group(*panels)
 
 def create_send_message_payload(text: str) -> dict[str, Any]:
   """
@@ -221,10 +446,12 @@ def extract_response_text(response) -> str:
 
     # Try to extract from artifacts first
     artifacts = result.get("artifacts")
-    if artifacts and isinstance(artifacts, list) and artifacts[0].get("parts"):
-      for part in artifacts[0]["parts"]:
-        if part.get("kind") == "text":
-          return part.get("text", "").strip()
+    if artifacts and isinstance(artifacts, list) and len(artifacts) > 0:
+      first_artifact = artifacts[0]
+      if isinstance(first_artifact, dict) and first_artifact.get("parts"):
+        for part in first_artifact["parts"]:
+          if part.get("kind") == "text":
+            return part.get("text", "").strip()
 
     # Fallback to status message
     message = result.get("status", {}).get("message", {})
@@ -360,363 +587,264 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         debug_log(f"Sending streaming message to agent at {client.url}...")
 
         # Initialize streaming state variables
-        first_content_received = False  # Track when to stop spinner
-        chunk_count = 0                 # Debug counter for received chunks
-        final_state_text = ""           # Text for final markdown panel - Only when task is complete
-        all_text = ""                   # Text for final markdown panel - Accumulate all text (in case there are no final state)
-        
-        # Simple deduplication tracking
-        last_event_signature = ""       # Track last processed content to detect consecutive duplicates
-        
-        # Task notification tracking for precise removal from final output
-        displayed_task_notifications = []  # Track exact notifications shown to user for filtering
-        
-        # Streaming content tracking
-        streaming_content = ""          # Accumulate all streamed content
-        streaming_lines = 0             # Track terminal lines used by streaming content
-        
-        # Execution plan tracking for separate display
-        execution_plan_content = ""     # Store execution plan separately for final display
-        
-        # Partial result tracking
-        partial_result_text = ""        # Store complete partial_result for final display
+        chunk_count = 0
+        final_state_text = ""
+        all_text = ""
+        partial_result_text = ""
+        last_event_signature = ""
+        final_response_text = ""  # Will be set after Live context exits
 
+        execution_markdown = ""
+        tool_entries: list[str] = []
+        tool_seen: set[str] = set()
+        tool_markdown = ""
+        response_stream_buffer = ""
+        response_markdown = ""  # Only used for Live dashboard (will stay empty for final response)
+        streaming_markdown = ""
 
-        # Process streaming response chunks as they arrive
-        async for chunk in client.send_message_streaming(streaming_request):
-          chunk_count += 1
-          debug_log(f"Received streaming chunk #{chunk_count}: {type(chunk)}")
-          debug_log(f"Chunk {chunk}")
+        notify_streaming_started()
+        try:
+          await wait_spinner_cleared()
+        except Exception:
+          await asyncio.sleep(0)
 
-          # Extract the actual event from the streaming response wrapper
-          event = chunk.root.result
-          event_type = type(event).__name__
-          
-          # Debug: Log event type and key attributes
-          artifact_name = None
-          if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
-            artifact_name = event.artifact.name
-          
-          debug_log("=" * 80)
-          debug_log(f"EVENT #{chunk_count}: Type={event_type}, Artifact={artifact_name}, Has_Status={hasattr(event, 'status')}")
-          debug_log(f"Event attributes: {[attr for attr in dir(event) if not attr.startswith('_')]}")
-          
-          # Optional: Enhanced event debugging (uncomment for detailed debugging)
-          # event_type = type(event).__name__
-          # debug_log(f"Event type: {event_type}")
-          # if hasattr(event, 'artifact') and event.artifact:
-          #   debug_log(f"Artifact name: {getattr(event.artifact, 'name', 'unnamed')}")
+        stream = client.send_message_streaming(streaming_request)
+        # Use Live with 3-second throttling to show progress while minimizing duplicates
+        # transient=False keeps the panels visible after streaming completes
+        with Live(build_dashboard(execution_markdown, tool_markdown, response_markdown, streaming_markdown),
+                  console=console,
+                  refresh_per_second=4,
+                  transient=False) as live:
 
-          # Extract text content using duck typing approach (more flexible than isinstance)
-          text = ""
+          def update_live() -> None:
+            live.update(build_dashboard(execution_markdown, tool_markdown, response_markdown, streaming_markdown))
 
-          intermediate_state = False
+          update_live()
+          async for chunk in stream:
+            chunk_count += 1
+            debug_log(f"Received streaming chunk #{chunk_count}: {type(chunk)}")
+            debug_log(f"Chunk {chunk}")
 
-          # Handle events with status (Task, TaskStatusUpdateEvent)
-          if getattr(event, 'status', None):
-            # These events typically contain status updates or initial task creation
-            text = _flatten_text_from_message_dict(event.status.message)
-            debug_log(f"Extracted text from status: '{text}'")
+            # Extract the actual event from the streaming response wrapper
+            event = chunk.root.result
+            event_type = type(event).__name__
 
-            if getattr(event, 'status', None) and event.status.state in [TaskState.working]:
-              debug_log(f"Task is in progress: {event.status.state}")
-              intermediate_state = True
+            # Debug: Log event type and key attributes
+            artifact_name = None
+            if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
+                artifact_name = event.artifact.name
 
-          # Handle events with artifacts (TaskArtifactUpdateEvent) - contains actual response content
-          elif hasattr(event, 'artifact') and event.artifact:
-            artifact = event.artifact
-            debug_log(f"Found artifact: {type(artifact)}, has parts: {hasattr(artifact, 'parts')}")
+            debug_log("=" * 80)
+            debug_log(f"EVENT #{chunk_count}: Type={event_type}, Artifact={artifact_name}, Has_Status={hasattr(event, 'status')}")
+            debug_log(f"Event attributes: {[attr for attr in dir(event) if not attr.startswith('_')]}")
 
-            # Process artifact parts to extract text content
-            if hasattr(artifact, 'parts') and artifact.parts:
-              debug_log(f"Artifact has {len(artifact.parts)} parts")
-              for j, part in enumerate(artifact.parts):
-                debug_log(f"Part {j}: {type(part)}, attributes: {[attr for attr in dir(part) if not attr.startswith('_')]}")
+            text = ""
+            intermediate_state = False
 
-                # Try different text extraction patterns based on part structure
-                if hasattr(part, 'text'):
-                  # Direct text attribute
-                  text += part.text
-                  debug_log(f"Added text from part.text: '{part.text}'")
-                elif hasattr(part, 'kind') and part.kind == 'text' and hasattr(part, 'text'):
-                  # Text part with kind discriminator
-                  text += part.text
-                  debug_log(f"Added text from part.kind=text: '{part.text}'")
-                elif hasattr(part, 'root') and hasattr(part.root, 'text'):
-                  # Nested text in root structure
-                  text += part.root.text
-                  debug_log(f"Added text from part.root.text: '{part.root.text}'")
-            else:
-              debug_log(f"Artifact: {artifact}")
-            debug_log(f"Extracted text from artifact: '{text[:100]}...' ({len(text)} chars)")
+            # Get artifact name early to decide if we should extract text
+            artifact_name = None
+            if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
+              artifact_name = event.artifact.name
 
-          # Smart deduplication based on artifact type and streaming strategy
-          # Note: artifact_name was already extracted earlier for debug logging
-          
-          # Handle different artifact types
-          if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
-            artifact_name = event.artifact.name
-            
-            if artifact_name == 'partial_result':
-              # STEP 2: Capture and parse partial_result
-              debug_log("Step 2: Received partial_result event")
-              
-              # Log event structure to understand what's available
-              debug_log(f"Step 2: Event type: {type(event)}")
-              debug_log(f"Step 2: Event attributes: {dir(event)}")
-              if hasattr(event, 'status'):
-                debug_log(f"Step 2: Event.status: {event.status}")
-              if hasattr(event, 'artifact'):
-                debug_log(f"Step 2: Event.artifact: {event.artifact}")
-                debug_log(f"Step 2: Artifact attributes: {dir(event.artifact)}")
-              
-              # Check if text is actually a string or needs parsing
-              debug_log(f"Step 2: Text type: {type(text)}, length: {len(text) if text else 0}")
-              
-              # Extract text from partial_result artifact
-              if text:
-                partial_result_text = text
-                debug_log(f"Step 2: Captured partial_result text ({len(partial_result_text)} chars)")
-                
-                # The artifact text contains mixed content with embedded JSON
-                # Split to extract the clean markdown section (Section 3)
-                try:
-                  # Try to parse as JSON first in case the entire thing is JSON
-                  json_data = json.loads(partial_result_text)
-                  # If it's pure JSON, extract the message or relevant field
-                  if isinstance(json_data, dict):
-                    partial_result_text = json_data.get('message', partial_result_text)
-                    debug_log("Step 2: Parsed as JSON, extracted message field")
-                except (json.JSONDecodeError, ValueError):
-                  # Not pure JSON, it's mixed content - extract Section 3 (markdown after JSON blob)
-                  sections = partial_result_text.split('{"status":', 1)
-                  if len(sections) == 2:
-                    after_split = sections[1]
-                    brace_end = after_split.find('}')
-                    if brace_end != -1:
-                      json_str = '{"status":' + after_split[:brace_end+1]
-                      section3_text = after_split[brace_end+1:]
-                      
-                      # Validate the JSON we found
-                      try:
-                        json_data = json.loads(json_str)
-                        debug_log(f"Step 2: Found embedded JSON - status={json_data.get('status')}")
-                        partial_result_text = section3_text.strip()
-                        debug_log(f"Step 2: Extracted Section 3 (markdown) - {len(partial_result_text)} chars")
-                      except json.JSONDecodeError:
-                        debug_log("Step 2: Could not parse embedded JSON, using full text")
-                    else:
-                      debug_log("Step 2: Could not find JSON end, using full text")
-                  else:
-                    debug_log("Step 2: No JSON separator found, using text as-is")
-              
-              # Don't display partial_result during streaming - we'll use it in Step 3
-              continue  # Skip displaying this chunk
-            
-            elif artifact_name == 'execution_plan_update':
-              # Extract and render execution plan from the update (this has the complete plan)
-              if text and not execution_plan_content:
-                # Extract content between ⟦ and ⟧ markers
-                execution_plan_matches = re.findall(r'⟦(.*?)⟧', text, re.DOTALL)
-                if execution_plan_matches:
-                  execution_plan_content = execution_plan_matches[0]
-                  debug_log(f"Extracted execution plan from update: {len(execution_plan_content)} chars")
-                  
-                  # Stop spinner if needed
-                  if not first_content_received:
-                    notify_streaming_started()
-                    try:
-                      await wait_spinner_cleared()
-                    except Exception:
-                      await asyncio.sleep(0)
-                    first_content_received = True
-                  
-                  # Render execution plan box immediately with newline for spacing
-                  print()  # Add newline before the box
-                  
-                  # Display the execution plan in a formatted panel
-                  console.print(Panel(
-                    Markdown(execution_plan_content),
-                    title="🎯 Execution Plan",
-                    border_style="cyan",
-                    padding=(1, 2)
-                  ))
-                  debug_log(f"Rendered execution plan panel from update ({len(execution_plan_content)} chars)")
-              
-              # Don't display this in streaming
-              debug_log("Skipping execution_plan_update from streaming display")
-              continue  # Skip displaying
-            
-            elif artifact_name == 'execution_plan_streaming':
-              # Don't display execution plan streaming - we'll show it in a box later
-              debug_log("Skipping execution_plan_streaming display - will render in box")
-              continue  # Skip displaying these chunks
-            
-            elif artifact_name == 'streaming_result':
-              # Track that we're receiving streaming content
-              debug_log(f"Processing streaming_result chunk: {text[:50] if text else 'empty'}...")
-          
-          # Basic consecutive duplicate prevention (only for identical consecutive events)
-          if text and text.strip():
-            text_content = text.strip()
-            
-            # Skip only if exact same content from exact same event type consecutively
-            if text_content == last_event_signature:
-              debug_log(f"Skipping consecutive duplicate from {event_type}: {text_content[:50]}...")
-              continue
-            
-            last_event_signature = text_content
-          
-          # Task notification detection and handling via artifact types
-          task_notification_handled = False
-          
-          # Check for task notification artifacts
-          if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
-            artifact_name = event.artifact.name
-            debug_log(f"Processing artifact: {artifact_name} (event type: {event_type})")
-            
-            # Handle tool notification start
-            if artifact_name == 'tool_notification_start':
-              if text:
-                notification_text = text.strip()
-                
-                # Check if we've already displayed this notification (simple string check)
-                if notification_text.strip() not in displayed_task_notifications:
-                  # Stop spinner and move to new line for task notification
-                  if not first_content_received:
-                    notify_streaming_started()
-                    try:
-                      await wait_spinner_cleared()
-                    except Exception:
-                      await asyncio.sleep(0)
-                    first_content_received = True
-                    sys.stdout.write("\n")  # Move to new line after spinner
-                    sys.stdout.flush()
-                  
-                  # Display the task notification on new line
-                  print(notification_text)
-                  # Store the clean notification text for precise removal
-                  displayed_task_notifications.append(notification_text.strip())
-                  task_notification_handled = True
-                  debug_log(f"Displayed task start notification: {notification_text}")
+            if getattr(event, 'status', None):
+              text = _flatten_text_from_message_dict(event.status.message)
+              debug_log(f"Extracted text from status: '{text}'")
+              if event.status.state in [TaskState.working]:
+                intermediate_state = True
+
+            elif hasattr(event, 'artifact') and event.artifact:
+              # Skip text extraction for artifacts that shouldn't go into streaming buffer
+              if artifact_name not in ['tool_notification_start', 'tool_notification_end',
+                                        'execution_plan_update', 'execution_plan_status_update',
+                                        'execution_plan_streaming']:
+                artifact = event.artifact
+                debug_log(f"Found artifact: {type(artifact)}, has parts: {hasattr(artifact, 'parts')}")
+                if hasattr(artifact, 'parts') and artifact.parts:
+                  debug_log(f"Artifact has {len(artifact.parts)} parts")
+                  for j, part in enumerate(artifact.parts):
+                    debug_log(f"Part {j}: {type(part)}, attributes: {[attr for attr in dir(part) if not attr.startswith('_')]}")
+                    if hasattr(part, 'text'):
+                      text += part.text
+                    elif hasattr(part, 'kind') and part.kind == 'text' and hasattr(part, 'text'):
+                      text += part.text
+                    elif hasattr(part, 'root') and hasattr(part.root, 'text'):
+                      text += part.root.text
+                debug_log(f"Extracted text from artifact '{artifact_name}': '{text[:100]}...' ({len(text)} chars)")
+              else:
+                # Still extract for tool notifications but they'll be handled specially
+                artifact = event.artifact
+                if hasattr(artifact, 'parts') and artifact.parts:
+                  for part in artifact.parts:
+                    if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                      text += part.root.text
+                    elif hasattr(part, 'text'):
+                      text += part.text
+                debug_log(f"Extracted text from special artifact '{artifact_name}': {len(text)} chars")
+
+            if artifact_name:
+
+              if artifact_name == 'partial_result':
+                debug_log(f"Step 2: Received partial_result event with {len(text)} chars")
+                if text:
+                  partial_result_text = sanitize_stream_text(text)
+                  debug_log(f"Step 2: After sanitization: {len(partial_result_text)} chars")
+                  debug_log(f"Step 2: First 200 chars: {partial_result_text[:200]}")
+                  # Store partial result for use after Live context exits
+                  # DON'T set response_markdown here - that displays it in Live dashboard
+                  # We'll use partial_result_text after the Live context exits
+                # DON'T clear streaming panel yet - keep it visible until we exit Live context
+                # streaming_markdown will be cleared after the Live context exits
+                update_live()
+                continue
+
+              if artifact_name == 'execution_plan_update':
+                if text:
+                  execution_markdown = format_execution_plan_text(text)
+                  update_live()
+                continue
+
+              if artifact_name == 'execution_plan_status_update':
+                if text:
+                  execution_markdown = format_execution_plan_text(text)
+                  update_live()
+                continue
+
+              if artifact_name == 'execution_plan_streaming':
+                continue
+
+              if artifact_name == 'tool_notification_start' and text:
+                notification_text = summarize_tool_notification(text)
+                if notification_text and notification_text not in tool_seen:
+                  tool_seen.add(notification_text)
+                  tool_entries.append(f"⏳ {notification_text}")
+                  recent = tool_entries[-8:]
+                  tool_markdown = "\n".join(f"- {line}" for line in recent)
+                  update_live()
+                # Don't add tool notifications to streaming output
+                continue
+
+              if artifact_name == 'tool_notification_end' and text:
+                completion_text = summarize_tool_notification(text)
+                if completion_text and completion_text not in tool_seen:
+                  tool_seen.add(completion_text)
+                  tool_entries.append(f"✅ {completion_text}")
+                  recent = tool_entries[-8:]
+                  tool_markdown = "\n".join(f"- {line}" for line in recent)
+                  update_live()
+                # Don't add tool notifications to streaming output
+                continue
+
+              # Skip other non-content artifacts
+              if artifact_name in ['final_result', 'complete_result']:
+                # These are handled by partial_result logic or task completion
+                continue
+
+            # Process text for streaming display
+            # Only process text from artifacts, NOT from status messages
+            # Status messages are metadata and should not go into the response buffer
+            # streaming_result: Goes into streaming panel AND response_stream_buffer
+            # partial_result: Already handled above with continue at line 671
+            # tool_notification_*: Already handled above with continue at lines 687, 698
+            # execution_plan_*: Already handled above with continue at lines 677, 682, 686
+            # By this point, we only have streaming_result artifacts (status text is skipped)
+            if text and artifact_name:
+              clean_streaming_text = sanitize_stream_text(text)
+              if not clean_streaming_text:
+                continue
+
+              # Deduplicate: skip if this exact text was just processed
+              signature = clean_streaming_text.strip()
+              if signature == last_event_signature:
+                continue
+              last_event_signature = signature
+
+              # Accumulate streaming text (token-by-token or chunk-by-chunk)
+              # Check if this is a progressive update (new text contains old text)
+              if response_stream_buffer.strip() and signature.startswith(response_stream_buffer.strip()):
+                # New text is an extension of old text, replace with full version
+                response_stream_buffer = clean_streaming_text
+              elif response_stream_buffer.strip() and response_stream_buffer.strip() in signature:
+                # New text contains old text somewhere, replace with full version
+                response_stream_buffer = clean_streaming_text
+              else:
+                # New independent chunk - check if we need a space
+                # Add space if both buffer and new chunk don't already have whitespace at boundaries
+                if response_stream_buffer and not response_stream_buffer.endswith((' ', '\n', '\t')) and not clean_streaming_text.startswith((' ', '\n', '\t')):
+                  response_stream_buffer += ' ' + clean_streaming_text
                 else:
-                  debug_log(f"Skipping duplicate task start notification: {notification_text}")
-                  task_notification_handled = True
-            
-            # Handle tool notification end
-            elif artifact_name == 'tool_notification_end':
-              if text:
-                completion_text = text.strip()
-                
-                # Check if we've already displayed this completion notification (simple string check)
-                if completion_text.strip() not in displayed_task_notifications:
-                  # Ensure spinner is stopped
-                  if not first_content_received:
-                    notify_streaming_started()
-                    try:
-                      await wait_spinner_cleared()
-                    except Exception:
-                      await asyncio.sleep(0)
-                    first_content_received = True
-                    sys.stdout.write("\n")  # Move to new line after spinner
-                    sys.stdout.flush()
-                  
-                  # Display completion notification on new line
-                  print(completion_text)
-                  # Store the clean notification text for precise removal
-                  displayed_task_notifications.append(completion_text.strip())
-                  task_notification_handled = True
-                  debug_log(f"Displayed task completion notification: {completion_text}")
-                else:
-                  debug_log(f"Skipping duplicate task completion notification: {completion_text}")
-                  task_notification_handled = True
-          
-          
-          # Visual feedback management: stop spinner only when we have actual content (and not already handled)
-          if text and not first_content_received and not task_notification_handled:
-            # Transition from spinner to streaming display
-            notify_streaming_started()          # Stop spinner; replaces with arrow (→) on same line
-            try:
-              await wait_spinner_cleared()      # Wait for spinner animation to complete
-            except Exception:
-              await asyncio.sleep(0)            # Best-effort fallback if spinner cleanup fails
-            sys.stdout.write("\n")              # Start streaming response on a new line
-            sys.stdout.flush()
-            first_content_received = True
+                  response_stream_buffer += clean_streaming_text
 
-          # Dual display strategy: real-time streaming + final markdown panel
-          if text and not task_notification_handled:
-            # Display streaming text (execution plan is already handled via artifacts above)
-            debug_log(f"DISPLAYING: '{text[:100]}...' ({len(text)} chars) from {event_type}, artifact={artifact_name}")
-            print(text, end="", flush=True)    # Show streaming text immediately (no newlines)
-            streaming_content += text          # Track for line counting
-            
-            # Calculate terminal lines used by streaming content (for later clearing)
-            streaming_lines = count_display_lines(streaming_content)
-            
-            if not intermediate_state:         # Avoid accumulating text for intermediate states
-              final_state_text += text               # Accumulate for final formatted display
-            all_text += text                   # Always accumulate all text (in case there are no final states)
-          elif text:
-            # For task notifications, still accumulate for final display but don't print immediately
-            debug_log(f"NOT DISPLAYING (task_notification={task_notification_handled}): '{text[:50]}...' from {event_type}, artifact={artifact_name}")
-            if not intermediate_state:
-              final_state_text += text
-            all_text += text
+              if not intermediate_state:
+                final_state_text = response_stream_buffer
+              all_text = response_stream_buffer
+              streaming_markdown = response_stream_buffer
+              update_live()
 
-        debug_log(f"Streaming completed with {chunk_count} chunks")
-        
-        # STEP 1 COMPLETE: Streaming lines tracked
-        debug_log(f"Step 1: Tracked streaming content - {len(streaming_content)} chars across {streaming_lines} terminal lines")
-        
-        # STEP 2 COMPLETE: Check if we have partial_result
-        if partial_result_text:
-          debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
-          text_to_render = partial_result_text
-        else:
-          debug_log("Step 2: No partial_result, using accumulated streaming text")
-          text_to_render = final_state_text if final_state_text else all_text
-        
-        # Clean up text for final display
-        if text_to_render:
-          clean_text = text_to_render
-          
-          # If using partial_result (Section 3), it should already be clean
-          # If using streaming text, need to clean it
-          if not partial_result_text:
-            # Remove exact task notifications that were displayed during streaming
-            for notification in displayed_task_notifications:
-              if notification in clean_text:
-                clean_text = clean_text.replace(notification, "")
-                debug_log(f"Removed task notification from final text: {notification[:30]}...")
-            
-            # Remove execution plan wrapped in ⟦ and ⟧ markers (already shown during streaming)
-            clean_text = re.sub(r'⟦.*?⟧', '', clean_text, flags=re.DOTALL)
-            debug_log("Removed execution plan markers (⟦...⟧) from final text")
-          
-          # Clean up excessive newlines while preserving markdown structure
-          clean_text = re.sub(r'\n{3,}', '\n\n', clean_text)  # Max 2 consecutive newlines for markdown
-          clean_text = clean_text.strip()
-          
-          if clean_text:
-            # STEP 3: Clear streaming content and replace with final panel
-            if partial_result_text and streaming_lines > 0:
-              # We have partial_result, so clear the streaming content
-              debug_log(f"Step 3: Clearing {streaming_lines} lines of streaming content")
-              clear_lines(streaming_lines)
-              debug_log("Step 3: Cleared streaming content, rendering final panel")
-            else:
-              # No partial_result or no streaming to clear, just add spacing
-              print("\n")
-              debug_log("Step 3: No clearing needed, appending final panel")
-            
-            # Execution plan and tool notifications stay visible
-            # Streaming content is cleared, now show clean final panel
-            render_answer(clean_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
-            debug_log(f"Step 3: Rendered final panel (filtered {len(displayed_task_notifications)} task notifications from content)")
+            if hasattr(event, 'is_task_complete') and event.is_task_complete:
+              # DON'T clear streaming panel - keep it visible until we exit Live context
+              # The final response will be shown after Live context exits
+              update_live()
+              break
+
+          debug_log(f"Streaming completed with {chunk_count} chunks")
+
+          # STEP 1 COMPLETE: Streaming lines tracked
+          debug_log(f"Step 1: Tracked streaming content - {len(response_stream_buffer)} chars")
+
+          # STEP 2 COMPLETE: Prepare final response for display outside Live context
+          # Prefer partial_result if available, otherwise use accumulated streaming text
+          if partial_result_text:
+            debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
+            debug_log(f"Step 2: partial_result_text first 200 chars: {partial_result_text[:200]}")
+            final_response_text = partial_result_text
+            debug_log(f"Step 2: final_response_text set to {len(final_response_text)} chars")
+          elif response_stream_buffer or final_state_text or all_text:
+            debug_log("Step 2: No partial_result, using accumulated streaming text")
+            text_to_render = final_state_text if final_state_text else all_text
+            if not text_to_render:
+              text_to_render = response_stream_buffer
+
+            if text_to_render:
+              # Use sanitize_stream_text for comprehensive cleaning
+              clean_text = sanitize_stream_text(text_to_render)
+              debug_log(f"Step 2: After sanitization: {len(clean_text)} chars")
+              debug_log(f"Step 2: First 200 chars: {clean_text[:200]}")
+
+              if clean_text:
+                # Store for rendering outside Live context
+                final_response_text = clean_text
+
+          # Clear streaming markdown and update one final time
+          # DON'T set response_markdown - keep it empty so it won't render in Live dashboard
+          streaming_markdown = ""
+          update_live()
+          # Keep the Live display visible for a moment
+          await asyncio.sleep(0.1)
+
+        # Debug output (only when DEBUG env var is set)
+        import os
+        if os.getenv("DEBUG_CLI"):
+          if final_response_text:
+            print(f"\n🔍 DEBUG: final_response_text length = {len(final_response_text)} chars")
+            print(f"🔍 DEBUG: First 200 chars = {final_response_text[:200]}")
+            print(f"🔍 DEBUG: Contains 'ArgoCD' = {'ArgoCD' in final_response_text or 'argocd' in final_response_text.lower()}")
+            print(f"🔍 DEBUG: Contains 'Supervisor' = {'Supervisor' in final_response_text}")
+          else:
+            print("\n🔍 DEBUG: final_response_text is EMPTY!")
+            print(f"🔍 DEBUG: partial_result_text length = {len(partial_result_text) if partial_result_text else 0}")
+            print(f"🔍 DEBUG: response_stream_buffer length = {len(response_stream_buffer)}")
+
+        # Final render outside Live context - use final_response_text
+        if final_response_text:
+          render_answer(final_response_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
         return
 
       except Exception as stream_err:
+        import os
+        if os.getenv("DEBUG_CLI"):
+          print(f"\n❌ EXCEPTION in streaming: {type(stream_err).__name__}: {stream_err}")
+          import traceback
+          traceback.print_exc()
         debug_log(f"Streaming not available or failed: {stream_err}. Falling back to non-streaming.")
 
       # Fallback: non-streaming request
@@ -731,10 +859,10 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
       if isinstance(response.root, SendMessageSuccessResponse):
         debug_log("Agent returned success response")
         text = extract_response_text(response)
-        
+
         # Show original question for context (non-streaming fallback)
         print(f"💬 You: {user_input}")
-        
+
         render_answer(text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
       else:
         print(f"❌ Agent returned a non-success response: {response.root}")
@@ -795,11 +923,35 @@ async def fetch_agent_card(host, port, token: str, tls: bool) -> AgentCard:
 
 
 def main(host, port, token, tls):
+  # Get CLI version
+  cli_version = "unknown"
+  try:
+    from agent_chat_cli.__main__ import __version__
+    cli_version = __version__
+  except ImportError:
+    pass
+
   # Fetch the agent card before running the chat loop
   agent_card = asyncio.run(fetch_agent_card(host, port, token, tls))
   global agent_name
   agent_name = agent_card.name if hasattr(agent_card, "name") else "Agent"
-  print(f"✅ A2A Agent Card detected for \033[1m\033[32m{agent_name}\033[0m")
+
+  # Display welcome panel with version
+  from rich.console import Console
+  from rich.panel import Panel
+  from rich.align import Align
+
+  welcome_console = Console()
+  welcome_text = f"🚀 **agent-chat-cli** v{cli_version}\n\n✅ Connected to **{agent_name}**"
+  welcome_panel = Panel(
+    Align.center(welcome_text, vertical="middle"),
+    title="Welcome to AI Platform Engineer CLI",
+    title_align="center",
+    border_style="bold cyan",
+    padding=(1, 2)
+  )
+  welcome_console.print(welcome_panel)
+  print()  # Add spacing
   skills_description = ""
   skills_examples = []
 
