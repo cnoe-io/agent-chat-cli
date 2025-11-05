@@ -1,5 +1,11 @@
 ## Unreleased
 
+### Fix
+
+- streaming output improvements and test coverage enhancements
+
+## 0.2.16 (2025-11-05)
+
 ### BREAKING CHANGE
 
 - None - all changes are backward compatible
