@@ -11,6 +11,10 @@ from rich.prompt import Prompt
 from rich.panel import Panel
 from rich.align import Align
 import os
+try:
+    import tomllib
+except ImportError:
+    import tomli as tomllib  # Python < 3.11 fallback
 
 # Setup logging
 logging.basicConfig(
@@ -40,8 +44,37 @@ def load_client_module(protocol):
         sys.exit(1)
 
 
+def get_version():
+    """
+    Read version from multiple sources (in order of preference):
+    1. Package metadata (works with pip/uvx installed packages)
+    2. pyproject.toml (works in development/editable installs)
+    3. Fallback to "0.0.0"
+    """
+    # Try package metadata first (works for installed packages via pip/uvx)
+    try:
+        from importlib.metadata import version
+        return version("agent-chat-cli")
+    except Exception:
+        pass
+
+    # Try reading from pyproject.toml (works in development/Docker)
+    try:
+        pyproject_path = Path(__file__).parent.parent / "pyproject.toml"
+        with open(pyproject_path, "rb") as f:
+            pyproject_data = tomllib.load(f)
+        return pyproject_data["project"]["version"]
+    except Exception:
+        pass
+
+    # Fallback
+    return "0.0.0"
+
+
+__version__ = get_version()
+
 @click.group()
-@click.version_option()
+@click.version_option(version=__version__, prog_name="agent-chat-cli")
 def cli():
     """Agent CLI Chat Client — Interact with chat agents using multiple protocols."""
     pass
@@ -90,11 +123,16 @@ def a2a(host, port, token, debug):
     console.print(f"💬 [prompt]{label}[/prompt]", end="")
     return Prompt.ask("", default=default, password=password)
 
-  # Intro panel
+  # Welcome banner with version and configuration prompt
   console.print(Panel(
-    Align.center("🔧 [agent]Welcome to A2A Client Setup[/agent]\nPlease provide connection details below.", vertical="middle"),
-    title="🌐 Configuration",
-    border_style="agent",
+    Align.center(
+      f"🚀 [agent]agent-chat-cli[/agent] v{__version__}\n\n"
+      f"🔧 A2A Client Setup\n"
+      f"Set your Auth Key (or press Enter to skip)",
+      vertical="middle"
+    ),
+    title="✨ Welcome",
+    border_style="bold cyan",
     padding=(1, 2)
   ))
 
@@ -134,7 +172,7 @@ def a2a(host, port, token, debug):
     tls = True
   else:
     tls = False
-    
+
   client_module = load_client_module("a2a")
   client_module.main(host=host, port=port, token=token, tls=tls)
 

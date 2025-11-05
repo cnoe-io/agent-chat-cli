@@ -69,7 +69,7 @@ ruff-fix: ## Auto-fix lint issues with ruff
 
 ## ========== Clients ==========
 
-run-a2a-client: install ## Run A2A client script
+run-a2a-client: clean-pyc install ## Run A2A client script (cleans cache first)
 	@AGENT_CHAT_PROTOCOL=a2a uv run python -m agent_chat_cli
 
 run-mcp-client: install ## Run MCP client script
