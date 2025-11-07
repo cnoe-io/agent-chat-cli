@@ -1,5 +1,20 @@
 ## Unreleased
 
+### Feat
+
+- prioritize streaming buffer for UserInputMetaData detection
+- add dynamic form support and update all documentation to ADR format
+
+### Fix
+
+- **lint**: resolve linting errors in test_dynamic_form.py
+
+### Refactor
+
+- move test_dynamic_form from examples to tests
+
+## 0.2.17 (2025-11-05)
+
 ### Fix
 
 - streaming output improvements and test coverage enhancements
