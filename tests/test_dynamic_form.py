@@ -8,9 +8,10 @@ the CLI renders an interactive form.
 """
 
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 from agent_chat_cli.a2a_client import parse_structured_response, render_metadata_form
 from rich.console import Console
+from rich.panel import Panel
 
 # Example 1: Jira Ticket Creation
 jira_response = {
@@ -79,7 +80,7 @@ def test_parse_structured_response():
     json_text = json.dumps(jira_response)
     parsed = parse_structured_response(json_text)
 
-    print(f"\n✅ Parsed successfully:")
+    print("\n✅ Parsed successfully:")
     print(f"   - Content: {parsed['content'][:50]}...")
     print(f"   - Requires Input: {parsed['require_user_input']}")
     print(f"   - Metadata Fields: {len(parsed['metadata']['input_fields'])}")
@@ -88,7 +89,7 @@ def test_parse_structured_response():
     plain_text = "This is just a normal response without metadata"
     parsed_plain = parse_structured_response(plain_text)
 
-    print(f"\n✅ Plain text handled gracefully:")
+    print("\n✅ Plain text handled gracefully:")
     print(f"   - Content: {parsed_plain['content']}")
     print(f"   - Requires Input: {parsed_plain['require_user_input']}")
     print()
@@ -107,7 +108,7 @@ def test_render_form_jira():
 
     # Mock user input for testing
     with patch('rich.prompt.Prompt.ask') as mock_prompt, \
-         patch('rich.prompt.Confirm.ask', return_value=True) as mock_confirm:
+         patch('rich.prompt.Confirm.ask', return_value=True):
         # Simulate user inputs for each field
         mock_prompt.side_effect = ["CAIPE", "Bug", "Test Summary", "Test Description"]
 
@@ -144,7 +145,7 @@ def test_render_form_github():
 
     # Mock user input for testing
     with patch('rich.prompt.Prompt.ask') as mock_prompt, \
-         patch('rich.prompt.Confirm.ask', return_value=True) as mock_confirm:
+         patch('rich.prompt.Confirm.ask', return_value=True):
         # Simulate user inputs for each field
         mock_prompt.side_effect = ["owner/repo", "Test Issue", "bug,enhancement"]
 
@@ -174,8 +175,6 @@ if __name__ == "__main__":
         title="🎯 Test Suite",
         border_style="cyan"
     ))
-
-    from rich.panel import Panel
 
     print()
 
