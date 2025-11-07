@@ -1,16 +1,44 @@
-# Display Modes Configuration
+# Display Modes for Agent Output
+
+**Status**: 🟢 In-use
+**Category**: Features & Enhancements
+**Date**: November 7, 2025
 
 ## Overview
 
-The CLI offers three distinct display modes that control how agent responses are shown. You can customize the experience based on your preferences and use case.
+The CLI offers three distinct display modes that control how agent responses are shown, providing flexibility for different use cases from interactive development to automated pipelines.
 
-## Display Modes
+## The Problem
+
+Users have different needs when viewing agent responses:
+
+1. **Demo/Production users** want clean, professional output without duplicate content
+2. **Developers** need to see the full conversation flow including streaming progress
+3. **Automation/CI** requires minimal output for logging
+4. **Screen reader users** need output that doesn't confuse assistive technology
+5. **Debugging** scenarios require visibility into streaming behavior
+
+Previously, there was only one display mode with no configuration options.
+
+## The Solution
+
+Three configurable display modes accessible via command-line flags or environment variables:
 
 ### Mode 1: Streaming with Auto-Clear (Default)
-**Flags:** `--show-streaming --clear-streaming` (default)
-**Env:** `A2A_SHOW_STREAMING=true A2A_CLEAR_STREAMING=true`
-
 Shows streaming text in real-time, then **clears it** and replaces with a clean structured panel.
+
+### Mode 2: Streaming with Keep
+Shows streaming text in real-time and **keeps it**, then adds the structured panel below.
+
+### Mode 3: Panel Only (No Streaming)
+Waits for complete response, then shows only the structured panel.
+
+## How It Works
+
+### Mode 1: Streaming with Auto-Clear (Default)
+
+**Flags:** `--show-streaming --clear-streaming` (default)  
+**Env:** `A2A_SHOW_STREAMING=true A2A_CLEAR_STREAMING=true`
 
 ```
 🧑‍💻 You: hello
@@ -35,17 +63,14 @@ Hello! How can I help you today?
 **Command:**
 ```bash
 agent-chat-cli a2a  # Default behavior
-# or explicitly:
-agent-chat-cli a2a --show-streaming --clear-streaming
 ```
 
 ---
 
-### Mode 2: Streaming with Keep (Your Requested Mode)
-**Flags:** `--show-streaming --no-clear-streaming`
-**Env:** `A2A_SHOW_STREAMING=true A2A_CLEAR_STREAMING=false`
+### Mode 2: Streaming with Keep
 
-Shows streaming text in real-time and **keeps it**, then adds the structured panel below.
+**Flags:** `--show-streaming --no-clear-streaming`  
+**Env:** `A2A_SHOW_STREAMING=true A2A_CLEAR_STREAMING=false`
 
 ```
 🧑‍💻 You: hello
@@ -64,22 +89,18 @@ Hello! How can I help you today?
 - ✅ Debugging streaming behavior
 - ✅ Users who like seeing progress
 - ✅ Long responses where you want immediate feedback
-- ✅ Comparing streamed vs final formatting
 
 **Command:**
 ```bash
 agent-chat-cli a2a --no-clear-streaming
-# or with env var:
-A2A_CLEAR_STREAMING=false agent-chat-cli a2a
 ```
 
 ---
 
 ### Mode 3: Panel Only (No Streaming)
-**Flags:** `--no-show-streaming`
-**Env:** `A2A_SHOW_STREAMING=false`
 
-Waits for complete response, then shows only the structured panel.
+**Flags:** `--no-show-streaming`  
+**Env:** `A2A_SHOW_STREAMING=false`
 
 ```
 🧑‍💻 You: hello
@@ -96,19 +117,14 @@ Waits for complete response, then shows only the structured panel.
 - ✅ Cleanest output (text appears only once)
 - ✅ Slow terminals or screen readers
 - ✅ CI/CD pipelines and automation
-- ✅ Users who don't want any duplicate content
 - ✅ Recording terminal sessions
 
 **Command:**
 ```bash
 agent-chat-cli a2a --no-show-streaming
-# or with env var:
-A2A_SHOW_STREAMING=false agent-chat-cli a2a
 ```
 
----
-
-## Configuration Methods
+## Configuration
 
 ### Method 1: Command-Line Flags
 
@@ -116,14 +132,11 @@ A2A_SHOW_STREAMING=false agent-chat-cli a2a
 # Mode 1: Streaming with auto-clear (default)
 agent-chat-cli a2a
 
-# Mode 2: Streaming and keep (your request)
+# Mode 2: Streaming and keep
 agent-chat-cli a2a --no-clear-streaming
 
 # Mode 3: Panel only
 agent-chat-cli a2a --no-show-streaming
-
-# You can also combine with other options
-agent-chat-cli a2a --host localhost --port 8000 --no-clear-streaming
 ```
 
 ### Method 2: Environment Variables
@@ -144,25 +157,7 @@ export A2A_SHOW_STREAMING=false
 agent-chat-cli a2a
 ```
 
-### Method 3: .env File
-
-Create a `.env` file:
-
-```bash
-# .env
-A2A_HOST=localhost
-A2A_PORT=8000
-A2A_SHOW_STREAMING=true
-A2A_CLEAR_STREAMING=false  # Keep streamed text
-```
-
-Then use:
-```bash
-export $(cat .env | xargs)
-agent-chat-cli a2a
-```
-
-## Configuration Precedence
+### Configuration Precedence
 
 Settings are applied in this order (highest to lowest):
 
@@ -170,51 +165,40 @@ Settings are applied in this order (highest to lowest):
 2. **Command-Line Flags** - `--show-streaming`, `--clear-streaming`
 3. **Default Values** - `true` for both
 
-## Comparison Table
+## Features
+
+### Special Cases
+
+**JSON Structured Responses:**  
+For responses with metadata (interactive inputs), streaming is automatically suppressed regardless of settings to ensure clean display of interactive prompts.
+
+**Very Long Responses:**
+- **Mode 1**: Clears all streamed lines efficiently
+- **Mode 2**: Shows full stream history + panel (may scroll)
+- **Mode 3**: Only shows panel (most compact)
+
+### Comparison Table
 
 | Mode | Streaming Display | Clear Before Panel | Text Appears | Use Case |
 |------|------------------|-------------------|--------------|----------|
 | **Mode 1** (Default) | ✅ Yes | ✅ Yes | Once (panel only) | Clean, professional |
-| **Mode 2** (Requested) | ✅ Yes | ❌ No | Twice (stream + panel) | Full flow visibility |
+| **Mode 2** | ✅ Yes | ❌ No | Twice (stream + panel) | Full flow visibility |
 | **Mode 3** | ❌ No | N/A | Once (panel only) | Minimal, automation |
 
-## Special Cases
+## Implementation Files
 
-### JSON Structured Responses
+**Modified Files:**
 
-For responses with metadata (interactive inputs), streaming is automatically suppressed regardless of settings:
+1. **`agent_chat_cli/__main__.py`**
+   - Added `--show-streaming/--no-show-streaming` CLI flags
+   - Added `--clear-streaming/--no-clear-streaming` CLI flags
+   - Environment variable integration
 
-```json
-{
-  "is_task_complete": false,
-  "require_user_input": true,
-  "content": "Select an action...",
-  "metadata": {...}
-}
-```
-
-**All modes show:**
-```
-⏳ Waiting for agent... →
-
-╭───────────── AI Platform Engineer Response ─────────────╮
-│                                                         │
-│  Select an action...                                    │
-│                                                         │
-╰─────────────────────────────────────────────────────────╯
-
-📝 Would you like to...
-```
-
-This ensures clean display of interactive prompts.
-
-### Very Long Responses
-
-For responses with many lines:
-
-- **Mode 1**: Clears all streamed lines efficiently
-- **Mode 2**: Shows full stream history + panel (may scroll)
-- **Mode 3**: Only shows panel (most compact)
+2. **`agent_chat_cli/a2a_client.py`**
+   - Added `SHOW_STREAMING` and `CLEAR_STREAMING` configuration
+   - Implemented line tracking and clearing logic
+   - Terminal width-aware line counting
+   - ANSI escape code support for clearing
 
 ## Examples
 
@@ -247,21 +231,6 @@ export A2A_SHOW_STREAMING=false
 echo "test query" | agent-chat-cli a2a
 ```
 
-### Quick Testing
-
-Test different modes quickly:
-
-```bash
-# Try mode 1 (default)
-agent-chat-cli a2a
-
-# Try mode 2 (keep streaming)
-agent-chat-cli a2a --no-clear-streaming
-
-# Try mode 3 (panel only)
-agent-chat-cli a2a --no-show-streaming
-```
-
 ## Terminal Compatibility
 
 All modes work with:
@@ -271,6 +240,23 @@ All modes work with:
 - ✅ VS Code integrated terminal
 
 For Mode 1 (auto-clear), requires ANSI escape code support. If your terminal doesn't support this, use Mode 2 or 3.
+
+## Benefits
+
+### 1. Flexibility
+Three distinct modes for different scenarios - development, production, automation.
+
+### 2. User Control
+Users can choose their preferred experience via simple flags or environment variables.
+
+### 3. Professional Output
+Mode 1 provides clean, demo-ready output without duplicate content.
+
+### 4. Developer Experience
+Mode 2 shows full streaming progress for debugging and development.
+
+### 5. Automation Friendly
+Mode 3 provides minimal, clean output perfect for CI/CD pipelines.
 
 ## Troubleshooting
 
@@ -289,12 +275,6 @@ For Mode 1 (auto-clear), requires ANSI escape code support. If your terminal doe
 agent-chat-cli a2a --no-show-streaming
 ```
 
-### Issue: Want to see streaming but not the panel
-
-**Note:** This is not currently supported. You can only have:
-- Streaming + Panel (with or without clear)
-- Panel only
-
 ### Issue: Lines not clearing properly
 
 **Possible Cause:** Terminal width detection issue or long wrapped lines.
@@ -310,7 +290,7 @@ agent-chat-cli a2a --no-clear-streaming
 # Default - Clean, streaming with auto-clear
 agent-chat-cli a2a
 
-# Keep streaming visible (your request)
+# Keep streaming visible
 agent-chat-cli a2a --no-clear-streaming
 
 # Panel only, no streaming
@@ -320,19 +300,7 @@ agent-chat-cli a2a --no-show-streaming
 A2A_CLEAR_STREAMING=false agent-chat-cli a2a
 ```
 
-## Summary
+---
 
-Your requested mode is **Mode 2**: Streaming with Keep
-
-**Command:** `agent-chat-cli a2a --no-clear-streaming`
-**Env Var:** `A2A_CLEAR_STREAMING=false`
-
-This will:
-- ✅ Show streaming text as it arrives
-- ✅ Keep the streamed text visible
-- ✅ Add the "AI Platform Engineer Response" panel below
-- ✅ Provide full visibility of the conversation flow
-
-
-
+**This provides users with flexible display options for any use case!** 🎨
 
