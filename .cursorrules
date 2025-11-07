@@ -1,0 +1,157 @@
+# Agent-Chat-CLI Project Rules
+
+## Documentation Standards
+
+### ADR (Architecture Decision Record) Format
+
+All change documentation in the `changes/` directory must follow the ADR format:
+
+#### File Naming Convention
+- Format: `YYYY-MM-DD-kebab-case-description.md`
+- Example: `2025-11-07-dynamic-form-support.md`
+- Use the current date when creating new ADRs
+
+#### Required Header Structure
+```markdown
+# Title in Title Case
+
+**Status**: 🟢 In-use | 🟡 Proposed | 🔴 Deprecated
+**Category**: Features & Enhancements | Bug Fixes | Configuration & Setup | Documentation & Examples
+**Date**: Month DD, YYYY
+```
+
+#### Required Sections (in order)
+1. **Overview** - Brief summary of what this document covers
+2. **The Problem** (optional for new features) - What problem this solves or what was wrong before
+3. **The Solution** - What was implemented or changed
+4. **How It Works** - Technical explanation with examples
+5. **Implementation Details** - Code locations, functions, technical specifics
+6. **Features** (if applicable) - List of capabilities with checkmarks
+7. **Benefits** - Why this is valuable
+8. **Implementation Files** - List of modified/new files with descriptions
+9. **Examples** (if applicable) - Usage examples
+10. **Configuration** (if applicable) - How to configure
+11. **Testing** (if applicable) - Test coverage and how to run tests
+12. **Compatibility** - Backward compatibility notes
+13. **Troubleshooting** (if applicable) - Common issues and solutions
+14. **Future Enhancements** (optional) - Potential improvements
+
+#### Style Guidelines
+- Use emoji indicators: ✅ ❌ 🟢 🟡 🔴 📋 🎯 🎨 etc.
+- Use markdown formatting: **bold**, `code`, ```code blocks```
+- Include code examples with syntax highlighting
+- Use tables for comparisons
+- Keep language clear and concise
+- Focus on "what" and "why", not just "how"
+
+#### Example Header
+```markdown
+# Dynamic Form Support for Structured User Input
+
+**Status**: 🟢 In-use
+**Category**: Features & Enhancements
+**Date**: November 7, 2025
+
+## Overview
+
+Agent-Chat-CLI now supports **structured metadata responses** with **dynamic form generation**...
+```
+
+## Git Commit Standards
+
+### Conventional Commits
+All commits must follow conventional commit format:
+
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+**Types:**
+- `feat:` - New feature
+- `fix:` - Bug fix
+- `docs:` - Documentation changes
+- `refactor:` - Code refactoring
+- `test:` - Adding or updating tests
+- `chore:` - Maintenance tasks
+
+**Requirements:**
+- Always use `--signoff` flag (DCO)
+- Include detailed body explaining what and why
+- Reference issues/PRs in footer if applicable
+
+**Example:**
+```
+feat: add dynamic form support for structured user input
+
+This implements interactive CLI forms for collecting structured user input with
+validation, field descriptions, and a beautiful UI using rich prompts.
+
+- Add parse_structured_response() to parse JSON metadata
+- Add render_metadata_form() for interactive form rendering
+- Support text and choice fields with validation
+
+Signed-off-by: Your Name <your.email@example.com>
+```
+
+## Code Style
+
+### Python
+- Follow PEP 8
+- Use type hints where appropriate
+- Add docstrings to all functions
+- Keep functions focused and small
+
+### Testing
+- Write tests for all new features
+- Use pytest conventions
+- Test both success and failure scenarios
+- Aim for high coverage on new code
+
+## Pull Requests
+
+### PR Description Format
+- Start with ## Overview
+- List features/changes with checkmarks
+- Include before/after comparisons if applicable
+- Add testing information
+- Note any breaking changes
+- Reference related issues
+
+### Review Requirements
+- All tests must pass
+- Documentation must be updated
+- ADR created for significant changes
+- DCO sign-off on all commits
+
+## Project Structure
+
+```
+agent-chat-cli/
+├── agent_chat_cli/       # Main package code
+├── tests/                # Test files (test_*.py)
+├── examples/             # Usage examples
+├── changes/              # ADR documentation (YYYY-MM-DD-*.md)
+└── .cursorrules          # This file
+```
+
+## When Creating New Features
+
+1. ✅ Implement the feature code
+2. ✅ Write comprehensive tests
+3. ✅ Add usage examples if helpful
+4. ✅ Create ADR documentation in `changes/`
+5. ✅ Update relevant existing docs if needed
+6. ✅ Commit with conventional commit format + DCO
+7. ✅ Create PR with detailed description
+
+## Reference
+
+For more examples of ADR format, see existing files in `changes/`:
+- `changes/2025-11-07-dynamic-form-support.md`
+- `changes/2025-11-07-display-modes.md`
+- `changes/2025-11-07-interactive-input.md`
+
