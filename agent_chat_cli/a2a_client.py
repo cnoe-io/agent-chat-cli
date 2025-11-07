@@ -43,6 +43,8 @@ from rich.panel import Panel
 from rich.markdown import Markdown
 from rich.text import Text
 from rich.live import Live
+from rich.prompt import Prompt, Confirm
+from rich.table import Table
 from agent_chat_cli.chat_interface import run_chat_loop, render_answer, notify_streaming_started, wait_spinner_cleared
 
 import httpx
@@ -227,6 +229,129 @@ def summarize_tool_notification(raw_text: str) -> str:
     text = text[:max_len].rstrip() + "…"
 
   return text
+
+
+def parse_structured_response(text: str) -> dict:
+  """
+  Parse structured JSON response from agent.
+  Returns dict with: content, require_user_input, metadata
+
+  Supports two formats:
+  1. UserInputMetaData: {...} - Explicit prefix format
+  2. Plain JSON {...} - Legacy format
+  """
+  if not text or not text.strip():
+    return {"content": text, "require_user_input": False, "metadata": None}
+
+  # Check for UserInputMetaData: prefix first
+  user_input_metadata_prefix = 'UserInputMetaData:'
+  if text.strip().startswith(user_input_metadata_prefix):
+    debug_log("🎨 UserInputMetaData prefix detected")
+    try:
+      # Extract JSON after the prefix
+      json_str = text.strip()[len(user_input_metadata_prefix):].strip()
+      data = json.loads(json_str)
+
+      if isinstance(data, dict):
+        debug_log(f"🎨 UserInputMetaData parsed successfully: {data.get('metadata', {}).get('input_fields', [])}")
+        return {
+          "content": data.get("content", text),
+          "require_user_input": data.get("require_user_input", False),
+          "metadata": data.get("metadata")
+        }
+    except (json.JSONDecodeError, ValueError) as e:
+      debug_log(f"❌ Failed to parse UserInputMetaData JSON: {e}")
+      # Fall through to try regular JSON parsing
+
+  # Try regular JSON parsing (legacy format)
+  try:
+    data = json.loads(text.strip())
+    if isinstance(data, dict):
+      return {
+        "content": data.get("content", text),
+        "require_user_input": data.get("require_user_input", False),
+        "metadata": data.get("metadata")
+      }
+  except (json.JSONDecodeError, ValueError):
+    pass
+
+  return {"content": text, "require_user_input": False, "metadata": None}
+
+
+def render_metadata_form(metadata: dict, console: Console = None) -> dict:
+  """
+  Render an interactive form for metadata input fields using rich prompts.
+  Returns dict of field_name -> user_value
+  """
+  if console is None:
+    console = Console()
+
+  if not metadata or not metadata.get("input_fields"):
+    return {}
+
+  console.print()
+  console.print(Panel(
+    "[bold cyan]📋 Input Required[/bold cyan]",
+    style="cyan",
+    border_style="cyan"
+  ))
+
+  input_fields = metadata.get("input_fields", [])
+  form_data = {}
+
+  for field in input_fields:
+    field_name = field.get("field_name") or field.get("name")
+    field_description = field.get("field_description") or field.get("description", "")
+    field_values = field.get("field_values") or field.get("options")
+
+    if not field_name:
+      continue
+
+    # Display field description if available
+    if field_description:
+      console.print(f"\n[yellow]{field_description}[/yellow]")
+
+    # Handle different field types
+    if field_values and isinstance(field_values, list):
+      # Choice field - show options and validate
+      console.print(f"[dim]Options: {', '.join(str(v) for v in field_values)}[/dim]")
+
+      while True:
+        value = Prompt.ask(
+          f"[bold]{field_name}[/bold]",
+          default=str(field_values[0]) if field_values else None
+        )
+
+        # Validate choice
+        if value in [str(v) for v in field_values]:
+          form_data[field_name] = value
+          break
+        else:
+          console.print(f"[red]❌ Invalid choice. Please select from: {', '.join(str(v) for v in field_values)}[/red]")
+
+    else:
+      # Text field
+      value = Prompt.ask(f"[bold]{field_name}[/bold]")
+      form_data[field_name] = value
+
+  # Show summary
+  console.print()
+  table = Table(title="📝 Your Input", show_header=True, header_style="bold cyan")
+  table.add_column("Field", style="cyan")
+  table.add_column("Value", style="green")
+
+  for field_name, value in form_data.items():
+    table.add_row(field_name, str(value))
+
+  console.print(table)
+  console.print()
+
+  # Confirm submission
+  if not Confirm.ask("[bold]Submit this information?[/bold]", default=True):
+    console.print("[yellow]Input cancelled. You can try again.[/yellow]")
+    return {}
+
+  return form_data
 
 
 def sanitize_stream_text(raw_text: str) -> str:
@@ -828,8 +953,23 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         debug_log(f"Step 1: Tracked streaming content - {len(response_stream_buffer)} chars")
 
         # STEP 2 COMPLETE: Prepare final response for display outside Live context
-        # Prefer partial_result if available, otherwise use accumulated streaming text
-        if partial_result_text:
+        # Prefer streaming buffer if it contains UserInputMetaData, otherwise use partial_result
+        # This ensures we get the structured JSON format
+
+        # Check if streaming buffer has UserInputMetaData
+        has_user_input_metadata = False
+        if response_stream_buffer and 'UserInputMetaData:' in response_stream_buffer:
+          debug_log("Step 2: UserInputMetaData detected in streaming buffer")
+          has_user_input_metadata = True
+
+        if has_user_input_metadata:
+          # Use streaming buffer to preserve UserInputMetaData
+          debug_log(f"Step 2: Using streaming buffer for UserInputMetaData ({len(response_stream_buffer)} chars)")
+          clean_text = sanitize_stream_text(response_stream_buffer)
+          if clean_text:
+            final_response_text = clean_text
+            debug_log(f"Step 2: final_response_text set from streaming buffer: {len(final_response_text)} chars")
+        elif partial_result_text:
           debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
           debug_log(f"Step 2: partial_result_text first 200 chars: {partial_result_text[:200]}")
           final_response_text = partial_result_text
@@ -873,7 +1013,33 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
 
         # Final render outside Live context - use final_response_text
         if final_response_text:
-          render_answer(final_response_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+          # Parse for structured metadata (dynamic forms)
+          parsed = parse_structured_response(final_response_text)
+          content_text = parsed["content"]
+
+          # Check if we have user input metadata
+          if parsed.get("require_user_input") and parsed.get("metadata"):
+            debug_log("🎨 User input required - rendering form")
+            # Render the explanation text first
+            render_answer(content_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+
+            # Then render the interactive form
+            user_data = render_metadata_form(parsed["metadata"], console)
+
+            if user_data:
+              # User provided input, send follow-up message
+              debug_log(f"📝 User provided input: {user_data}")
+              # Format the user input as a readable message
+              formatted_input = "\n".join([f"- {k}: {v}" for k, v in user_data.items()])
+              await handle_user_input(f"Here's the information you requested:\n{formatted_input}", token)
+              return
+            else:
+              debug_log("❌ User cancelled input")
+              return
+
+          # No metadata, just render the response
+          render_answer(content_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+
         return
 
       except Exception as stream_err:
@@ -899,7 +1065,31 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         # Show original question for context (non-streaming fallback)
         print(f"💬 You: {user_input}")
 
-        render_answer(text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+        # Parse for structured metadata (dynamic forms)
+        parsed = parse_structured_response(text)
+        content_text = parsed["content"]
+
+        # Render the main response
+        render_answer(content_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+
+        # Check if user input is required (non-streaming fallback)
+        if parsed["require_user_input"] and parsed["metadata"]:
+          debug_log("🎨 Structured metadata detected (non-streaming) - rendering form")
+
+          # Render interactive form
+          form_data = render_metadata_form(parsed["metadata"])
+
+          if form_data:
+            # User submitted form - send data back as structured JSON
+            debug_log(f"📤 Sending form data back to agent: {form_data}")
+
+            # Format as JSON for the agent
+            metadata_response = json.dumps(form_data, indent=2)
+
+            # Recursively call handle_user_input with the metadata response
+            await handle_user_input(metadata_response, token)
+          else:
+            print("[yellow]No input provided. You can ask another question.[/yellow]")
       else:
         print(f"❌ Agent returned a non-success response: {response.root}")
 

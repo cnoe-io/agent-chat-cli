@@ -1,8 +1,12 @@
-# Streaming Display Configuration
+# Streaming Display Configuration Guide
+
+**Status**: 🟢 In-use  
+**Category**: Configuration & Setup  
+**Date**: November 7, 2025
 
 ## Overview
 
-The CLI now supports configuring whether to show streaming text in real-time or suppress it and only show the final structured panel. This gives you control over the visual experience based on your preferences.
+The CLI supports configurable streaming behavior, allowing users to control whether to show real-time streaming text or suppress it and only show the final structured panel. This provides flexibility based on user preferences and use cases.
 
 ## Configuration Options
 
@@ -14,9 +18,9 @@ The CLI now supports configuring whether to show streaming text in real-time or 
 - Best for long responses where you want to see progress
 - Final panel still displayed for clean formatting
 
-### Option 1: Command-Line Flag
+### Option 1: Command-Line Flags
 
-Use the `--show-streaming` or `--no-show-streaming` flag when launching the CLI:
+Use the `--show-streaming` or `--no-show-streaming` flag:
 
 ```bash
 # Show streaming text (default)
@@ -48,7 +52,7 @@ export A2A_SHOW_STREAMING=yes  # Enabled
 
 ### Option 3: .env File
 
-Create a `.env` file in your project:
+Create a `.env` file:
 
 ```bash
 # .env file
@@ -57,7 +61,7 @@ A2A_HOST=localhost
 A2A_PORT=8000
 ```
 
-Then load it before running:
+Then load it:
 
 ```bash
 export $(cat .env | xargs)
@@ -77,10 +81,7 @@ Each pod can contain one or more containers that share resources...
 
 ╭───────────── AI Platform Engineer Response ─────────────╮
 │                                                         │
-│  Kubernetes Pods are the smallest deployable units in   │
-│  Kubernetes. They represent a single instance of a      │
-│  running process in your cluster. Each pod can          │
-│  contain one or more containers that share resources... │
+│  Kubernetes Pods are the smallest deployable units...   │
 │                                                         │
 ╰─────────────────────────────────────────────────────────╯
 ```
@@ -92,9 +93,8 @@ Each pod can contain one or more containers that share resources...
 - ✅ More engaging user experience
 
 **Cons:**
-- ❌ Text appears twice (streaming + panel)
+- ❌ Text may appear twice (streaming + panel, depending on clear mode)
 - ❌ Less clean for short responses
-- ❌ May be distracting for some users
 
 ### With Streaming Disabled
 
@@ -104,10 +104,7 @@ Each pod can contain one or more containers that share resources...
 
 ╭───────────── AI Platform Engineer Response ─────────────╮
 │                                                         │
-│  Kubernetes Pods are the smallest deployable units in   │
-│  Kubernetes. They represent a single instance of a      │
-│  running process in your cluster. Each pod can          │
-│  contain one or more containers that share resources... │
+│  Kubernetes Pods are the smallest deployable units...   │
 │                                                         │
 ╰─────────────────────────────────────────────────────────╯
 ```
@@ -115,47 +112,15 @@ Each pod can contain one or more containers that share resources...
 **Pros:**
 - ✅ Cleaner, more professional appearance
 - ✅ Text appears only once
-- ✅ No duplicate content
 - ✅ Better for screenshots/demos
 
 **Cons:**
 - ❌ No visual feedback during response generation
-- ❌ Spinner stays active until complete
 - ❌ Less engaging for long responses
 
-## Special Cases
+## Configuration Precedence
 
-### JSON Structured Responses
-
-For JSON responses with metadata (like interactive input prompts), streaming is **automatically suppressed** regardless of the flag setting. This ensures clean display of structured content.
-
-```json
-{
-  "is_task_complete": false,
-  "require_user_input": true,
-  "content": "Select an action...",
-  "metadata": {...}
-}
-```
-
-**Always displays as:**
-```
-⏳ Waiting for agent... →
-
-╭───────────── AI Platform Engineer Response ─────────────╮
-│                                                         │
-│  Select an action...                                    │
-│                                                         │
-╰─────────────────────────────────────────────────────────╯
-
-📝 Would you like to...
-```
-
-No raw JSON is ever shown, regardless of streaming setting.
-
-## Precedence Order
-
-Settings are applied in this order (highest to lowest precedence):
+Settings are applied in this order (highest to lowest):
 
 1. **Environment Variable** - `A2A_SHOW_STREAMING`
 2. **Command-Line Flag** - `--show-streaming` / `--no-show-streaming`
@@ -195,6 +160,25 @@ Disable streaming when:
 - Recording terminal sessions
 - Using screen readers or accessibility tools
 - Terminal doesn't support line clearing well
+
+## Special Cases
+
+### JSON Structured Responses
+
+For JSON responses with metadata (like interactive input prompts), streaming is **automatically suppressed** regardless of the flag setting. This ensures clean display of structured content.
+
+**Always displays as:**
+```
+⏳ Waiting for agent... →
+
+╭───────────── AI Platform Engineer Response ─────────────╮
+│  Select an action...                                    │
+╰─────────────────────────────────────────────────────────╯
+
+📝 Would you like to...
+```
+
+No raw JSON is ever shown, regardless of streaming setting.
 
 ## Terminal Compatibility
 
@@ -290,6 +274,7 @@ agent-chat-cli a2a --show-streaming
 
 **Recommendation:** Keep the default (streaming ON) for interactive use, and disable for scripts, demos, or compatibility reasons.
 
+---
 
-
+**This provides flexible streaming configuration for any use case!** ⚙️
 
