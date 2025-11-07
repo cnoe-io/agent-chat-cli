@@ -235,7 +235,7 @@ def parse_structured_response(text: str) -> dict:
   """
   Parse structured JSON response from agent.
   Returns dict with: content, require_user_input, metadata
-  
+
   Supports two formats:
   1. UserInputMetaData: {...} - Explicit prefix format
   2. Plain JSON {...} - Legacy format
@@ -251,7 +251,7 @@ def parse_structured_response(text: str) -> dict:
       # Extract JSON after the prefix
       json_str = text.strip()[len(user_input_metadata_prefix):].strip()
       data = json.loads(json_str)
-      
+
       if isinstance(data, dict):
         debug_log(f"🎨 UserInputMetaData parsed successfully: {data.get('metadata', {}).get('input_fields', [])}")
         return {
@@ -953,8 +953,23 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         debug_log(f"Step 1: Tracked streaming content - {len(response_stream_buffer)} chars")
 
         # STEP 2 COMPLETE: Prepare final response for display outside Live context
-        # Prefer partial_result if available, otherwise use accumulated streaming text
-        if partial_result_text:
+        # Prefer streaming buffer if it contains UserInputMetaData, otherwise use partial_result
+        # This ensures we get the structured JSON format
+
+        # Check if streaming buffer has UserInputMetaData
+        has_user_input_metadata = False
+        if response_stream_buffer and 'UserInputMetaData:' in response_stream_buffer:
+          debug_log(f"Step 2: UserInputMetaData detected in streaming buffer")
+          has_user_input_metadata = True
+
+        if has_user_input_metadata:
+          # Use streaming buffer to preserve UserInputMetaData
+          debug_log(f"Step 2: Using streaming buffer for UserInputMetaData ({len(response_stream_buffer)} chars)")
+          clean_text = sanitize_stream_text(response_stream_buffer)
+          if clean_text:
+            final_response_text = clean_text
+            debug_log(f"Step 2: final_response_text set from streaming buffer: {len(final_response_text)} chars")
+        elif partial_result_text:
           debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
           debug_log(f"Step 2: partial_result_text first 200 chars: {partial_result_text[:200]}")
           final_response_text = partial_result_text
@@ -1002,27 +1017,27 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           parsed = parse_structured_response(final_response_text)
           content_text = parsed["content"]
 
-          # Render the main response
-          render_answer(content_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
+          # Check if we have user input metadata
+          if parsed.get("require_user_input") and parsed.get("metadata"):
+            debug_log("🎨 User input required - rendering form")
+            # Render the explanation text first
+            render_answer(content_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
 
-          # Check if user input is required
-          if parsed["require_user_input"] and parsed["metadata"]:
-            debug_log(f"🎨 Structured metadata detected - rendering form")
+            # Then render the interactive form
+            user_data = render_metadata_form(parsed["metadata"], console)
 
-            # Render interactive form
-            form_data = render_metadata_form(parsed["metadata"], console=console)
-
-            if form_data:
-              # User submitted form - send data back as structured JSON
-              debug_log(f"📤 Sending form data back to agent: {form_data}")
-
-              # Format as JSON for the agent
-              metadata_response = json.dumps(form_data, indent=2)
-
-              # Recursively call handle_user_input with the metadata response
-              await handle_user_input(metadata_response, token)
+            if user_data:
+              # User provided input, send follow-up message
+              debug_log(f"📝 User provided input: {user_data}")
+              # Format the user input as a readable message
+              formatted_input = "\n".join([f"- {k}: {v}" for k, v in user_data.items()])
+              return send_message(f"Here's the information you requested:\n{formatted_input}", console=console)
             else:
-              console.print("[yellow]No input provided. You can ask another question.[/yellow]")
+              debug_log("❌ User cancelled input")
+              return
+
+          # No metadata, just render the response
+          render_answer(content_text, agent_name=agent_name.capitalize() if agent_name else "AI Platform Engineer")
 
         return
 
