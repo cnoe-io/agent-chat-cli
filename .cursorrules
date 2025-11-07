@@ -1,157 +1,406 @@
-# Agent-Chat-CLI Project Rules
+# Agent-Chat-CLI Development Rules
 
-## Documentation Standards
+## Repository Information
 
-### ADR (Architecture Decision Record) Format
-
-All change documentation in the `changes/` directory must follow the ADR format:
-
-#### File Naming Convention
-- Format: `YYYY-MM-DD-kebab-case-description.md`
-- Example: `2025-11-07-dynamic-form-support.md`
-- Use the current date when creating new ADRs
-
-#### Required Header Structure
-```markdown
-# Title in Title Case
-
-**Status**: 🟢 In-use | 🟡 Proposed | 🔴 Deprecated
-**Category**: Features & Enhancements | Bug Fixes | Configuration & Setup | Documentation & Examples
-**Date**: Month DD, YYYY
-```
-
-#### Required Sections (in order)
-1. **Overview** - Brief summary of what this document covers
-2. **The Problem** (optional for new features) - What problem this solves or what was wrong before
-3. **The Solution** - What was implemented or changed
-4. **How It Works** - Technical explanation with examples
-5. **Implementation Details** - Code locations, functions, technical specifics
-6. **Features** (if applicable) - List of capabilities with checkmarks
-7. **Benefits** - Why this is valuable
-8. **Implementation Files** - List of modified/new files with descriptions
-9. **Examples** (if applicable) - Usage examples
-10. **Configuration** (if applicable) - How to configure
-11. **Testing** (if applicable) - Test coverage and how to run tests
-12. **Compatibility** - Backward compatibility notes
-13. **Troubleshooting** (if applicable) - Common issues and solutions
-14. **Future Enhancements** (optional) - Potential improvements
-
-#### Style Guidelines
-- Use emoji indicators: ✅ ❌ 🟢 🟡 🔴 📋 🎯 🎨 etc.
-- Use markdown formatting: **bold**, `code`, ```code blocks```
-- Include code examples with syntax highlighting
-- Use tables for comparisons
-- Keep language clear and concise
-- Focus on "what" and "why", not just "how"
-
-#### Example Header
-```markdown
-# Dynamic Form Support for Structured User Input
-
-**Status**: 🟢 In-use
-**Category**: Features & Enhancements
-**Date**: November 7, 2025
-
-## Overview
-
-Agent-Chat-CLI now supports **structured metadata responses** with **dynamic form generation**...
-```
+**Project**: Agent-Chat-CLI
+**Type**: Python CLI Tool for A2A Agent Communication
+**Language**: Python 3.11+
+**Package Manager**: uv
+**Testing**: pytest
 
 ## Git Commit Standards
 
-### Conventional Commits
-All commits must follow conventional commit format:
+### Conventional Commits (REQUIRED)
+
+All commits MUST follow the [Conventional Commits](https://www.conventionalcommits.org/) specification:
 
 ```
-<type>(<scope>): <subject>
+<type>[optional scope]: <description>
 
-<body>
+[optional body]
 
-<footer>
+[optional footer(s)]
 ```
 
-**Types:**
-- `feat:` - New feature
-- `fix:` - Bug fix
-- `docs:` - Documentation changes
-- `refactor:` - Code refactoring
-- `test:` - Adding or updating tests
-- `chore:` - Maintenance tasks
+#### Commit Types
 
-**Requirements:**
-- Always use `--signoff` flag (DCO)
-- Include detailed body explaining what and why
-- Reference issues/PRs in footer if applicable
+- **feat**: A new feature
+  ```
+  feat: add dynamic form support for structured metadata
+  feat(a2a): implement streaming display modes
+  ```
 
-**Example:**
+- **fix**: A bug fix
+  ```
+  fix: handle null field values in metadata forms
+  fix(streaming): prevent raw JSON display during streaming
+  ```
+
+- **docs**: Documentation only changes
+  ```
+  docs: add ADR for display modes
+  docs(adr): update streaming behavior documentation
+  ```
+
+- **style**: Changes that don't affect code meaning (formatting, missing semi-colons, etc.)
+  ```
+  style: format code with black
+  ```
+
+- **refactor**: Code change that neither fixes a bug nor adds a feature
+  ```
+  refactor: simplify metadata parsing logic
+  ```
+
+- **perf**: Performance improvements
+  ```
+  perf: optimize line clearing calculation
+  ```
+
+- **test**: Adding missing tests or correcting existing tests
+  ```
+  test: add tests for null value handling
+  ```
+
+- **build**: Changes to build system or dependencies
+  ```
+  build: update rich library to v13.7.0
+  ```
+
+- **ci**: Changes to CI configuration files and scripts
+  ```
+  ci: add GitHub Actions workflow for tests
+  ```
+
+- **chore**: Other changes that don't modify src or test files
+  ```
+  chore: update .gitignore
+  ```
+
+#### Breaking Changes
+
+Breaking changes MUST be indicated with `!` after the type/scope:
+
 ```
-feat: add dynamic form support for structured user input
+feat!: remove legacy SLIM protocol support
 
-This implements interactive CLI forms for collecting structured user input with
-validation, field descriptions, and a beautiful UI using rich prompts.
+BREAKING CHANGE: The SLIM protocol client has been removed.
+Use the A2A protocol instead.
+```
 
-- Add parse_structured_response() to parse JSON metadata
-- Add render_metadata_form() for interactive form rendering
-- Support text and choice fields with validation
+### Developer Certificate of Origin (DCO) - REQUIRED
 
+Every commit MUST include a DCO sign-off:
+
+```
 Signed-off-by: Your Name <your.email@example.com>
 ```
 
-## Code Style
+#### How to Sign Off
 
-### Python
-- Follow PEP 8
-- Use type hints where appropriate
-- Add docstrings to all functions
-- Keep functions focused and small
+**Option 1: Command Line (Recommended)**
+```bash
+git commit -s -m "feat: add new feature"
+```
 
-### Testing
-- Write tests for all new features
-- Use pytest conventions
-- Test both success and failure scenarios
-- Aim for high coverage on new code
+**Option 2: Manually add to commit message**
+```bash
+git commit -m "feat: add new feature
 
-## Pull Requests
+Signed-off-by: Sri Aradhyula <sraradhy@cisco.com>"
+```
 
-### PR Description Format
-- Start with ## Overview
-- List features/changes with checkmarks
-- Include before/after comparisons if applicable
-- Add testing information
-- Note any breaking changes
-- Reference related issues
+**Option 3: Configure Git to always sign off**
+```bash
+git config --global format.signoff true
+```
 
-### Review Requirements
-- All tests must pass
-- Documentation must be updated
-- ADR created for significant changes
-- DCO sign-off on all commits
+#### DCO Meaning
 
-## Project Structure
+By signing off, you certify that:
+- You wrote the code or have the right to submit it
+- You understand the code will be distributed under the project's license
+- You agree to the Developer Certificate of Origin v1.1
+
+### Complete Commit Example
+
+```
+feat(forms): add dynamic form support for structured metadata
+
+Implemented parse_structured_response() and render_metadata_form()
+to enable interactive CLI forms with dropdown and text field support.
+
+Users can now interact with structured agent responses through
+beautiful Rich-based prompts instead of manually typing JSON.
+
+Closes #123
+
+Signed-off-by: Sri Aradhyula <sraradhy@cisco.com>
+```
+
+## Architecture Decision Records (ADRs)
+
+### Location
+
+**ALL ADRs MUST be created in**: `docs/docs/changes/`
 
 ```
 agent-chat-cli/
-├── agent_chat_cli/       # Main package code
-├── tests/                # Test files (test_*.py)
-├── examples/             # Usage examples
-├── changes/              # ADR documentation (YYYY-MM-DD-*.md)
-└── .cursorrules          # This file
+├── docs/
+│   └── docs/
+│       └── changes/         ← ADRs go here
+│           ├── .cursorrules
+│           ├── README.md
+│           └── YYYY-MM-DD-title.md
 ```
 
-## When Creating New Features
+### Creating ADRs
 
-1. ✅ Implement the feature code
-2. ✅ Write comprehensive tests
-3. ✅ Add usage examples if helpful
-4. ✅ Create ADR documentation in `changes/`
-5. ✅ Update relevant existing docs if needed
-6. ✅ Commit with conventional commit format + DCO
-7. ✅ Create PR with detailed description
+When implementing significant changes:
 
-## Reference
+1. **Create ADR file** in `docs/docs/changes/`
+2. **Follow naming**: `YYYY-MM-DD-descriptive-title.md`
+3. **Use ADR template** from `.cursorrules` in that directory
+4. **Verify status**: Only mark 🟢 In-use if feature is implemented and tested
+5. **Update README**: Add entry to `docs/docs/changes/README.md`
 
-For more examples of ADR format, see existing files in `changes/`:
-- `changes/2025-11-07-dynamic-form-support.md`
-- `changes/2025-11-07-display-modes.md`
-- `changes/2025-11-07-interactive-input.md`
+### What Requires an ADR
 
+✅ Create ADR for:
+- New features (interactive forms, display modes)
+- Architecture changes (streaming behavior, state management)
+- Bug fixes with broad impact
+- Configuration changes
+- Protocol changes
+
+❌ Don't create ADR for:
+- Minor bug fixes
+- Typo corrections
+- Dependency updates
+- Code formatting
+
+## Code Style
+
+### Python Code Standards
+
+- **Formatter**: Black (line length 100)
+- **Linter**: Ruff
+- **Type Hints**: Required for all functions
+- **Docstrings**: Required for public functions (Google style)
+
+```python
+def parse_structured_response(text: str) -> dict:
+    """Parse structured JSON responses from agents.
+
+    Args:
+        text: Raw response text from agent
+
+    Returns:
+        Dictionary with content, require_user_input, and metadata
+
+    Example:
+        >>> parse_structured_response('{"content": "Hello"}')
+        {'content': 'Hello', 'require_user_input': False, 'metadata': None}
+    """
+    # Implementation
+```
+
+### Import Organization
+
+```python
+# Standard library
+import os
+import sys
+from typing import Optional, Dict, Any
+
+# Third-party
+from rich.console import Console
+from rich.panel import Panel
+import httpx
+
+# Local
+from agent_chat_cli.chat_interface import render_answer
+from agent_chat_cli.a2a_client import A2AClient
+```
+
+### Testing Requirements
+
+- **Coverage**: Minimum 80% for new code
+- **Test Files**: Match source file structure
+  - `agent_chat_cli/a2a_client.py` → `tests/test_a2a_client.py`
+- **Integration Tests**: Required for CLI commands
+
+```bash
+# Run tests
+pytest tests/
+
+# With coverage
+pytest --cov=agent_chat_cli tests/
+
+# Specific test
+pytest tests/test_chat_interface.py -k test_parse_json_response
+```
+
+## Development Workflow
+
+### 1. Create Feature Branch
+
+```bash
+git checkout -b feat/dynamic-forms
+# or
+git checkout -b fix/null-field-handling
+```
+
+### 2. Make Changes
+
+- Write code following style guidelines
+- Add/update tests
+- Create/update ADR in `docs/docs/changes/` if needed
+
+### 3. Run Tests
+
+```bash
+# Format code
+black agent_chat_cli/ tests/
+
+# Lint
+ruff check agent_chat_cli/ tests/
+
+# Test
+pytest tests/ --cov=agent_chat_cli
+```
+
+### 4. Commit with DCO
+
+```bash
+git add .
+git commit -s -m "feat(forms): add dynamic form support
+
+Implemented interactive CLI forms with dropdown and text field support.
+
+Signed-off-by: Sri Aradhyula <sraradhy@cisco.com>"
+```
+
+### 5. Push and Create PR
+
+```bash
+git push origin feat/dynamic-forms
+```
+
+## File Organization
+
+```
+agent-chat-cli/
+├── agent_chat_cli/          # Source code
+│   ├── __init__.py
+│   ├── __main__.py
+│   ├── a2a_client.py        # A2A protocol client
+│   ├── chat_interface.py    # UI/rendering
+│   └── enhanced_input.py    # Input handling
+├── tests/                   # Test files
+│   ├── test_a2a_client.py
+│   ├── test_chat_interface.py
+│   └── integration/         # Integration tests
+├── docs/                    # Documentation
+│   ├── docs/
+│   │   └── changes/         # ← ADRs HERE
+│   └── ENHANCED_INPUT_GUIDE.md
+├── examples/                # Example scripts
+├── pyproject.toml          # Project config
+├── uv.lock                 # Dependency lock
+└── README.md
+```
+
+## Environment Variables
+
+Document all environment variables in ADRs:
+
+```bash
+# A2A Agent Connection
+A2A_HOST=localhost           # Agent host
+A2A_PORT=8000               # Agent port
+A2A_TLS=false               # Enable TLS
+A2A_TOKEN=                  # Auth token (optional)
+
+# Display Configuration
+A2A_SHOW_STREAMING=true     # Show real-time streaming
+A2A_CLEAR_STREAMING=true    # Clear streaming before panel
+
+# Debugging
+A2A_DEBUG_CLIENT=false      # Enable debug logging
+```
+
+## Code Review Checklist
+
+Before submitting PR:
+- [ ] Conventional commit format used
+- [ ] DCO sign-off present (`Signed-off-by:`)
+- [ ] Tests added/updated
+- [ ] Tests passing locally
+- [ ] Code formatted with Black
+- [ ] No Ruff linting errors
+- [ ] ADR created/updated in `docs/docs/changes/` (if applicable)
+- [ ] Type hints added to new functions
+- [ ] Docstrings added to public functions
+- [ ] README updated (if user-facing changes)
+
+## Dependencies
+
+### Adding Dependencies
+
+```bash
+# Add new dependency
+uv add rich
+
+# Add dev dependency
+uv add --dev pytest
+
+# Update lock file
+uv lock
+```
+
+### Dependency Guidelines
+
+- Prefer established, maintained libraries
+- Check license compatibility
+- Document why dependency is needed
+- Pin versions in pyproject.toml
+
+## Security
+
+- Never commit secrets or tokens
+- Use environment variables for configuration
+- Validate all user input
+- Follow Python security best practices
+
+## Performance
+
+- Minimize blocking I/O operations
+- Use async/await for network calls
+- Cache expensive computations
+- Profile before optimizing
+
+## Accessibility
+
+- Support screen readers (avoid excessive line clearing)
+- Provide text-only mode option
+- Use clear, descriptive messages
+- Support keyboard-only navigation
+
+## Contact
+
+**Maintainer**: Sri Aradhyula <sraradhy@cisco.com>
+**Team**: Platform Engineering Team
+
+For questions:
+- Check `docs/docs/changes/` for ADRs
+- Review existing issues/PRs
+- Contact maintainer
+
+---
+
+**Remember**:
+- ✅ Use conventional commits
+- ✅ Always sign off with DCO (`-s`)
+- ✅ Write ADRs in `docs/docs/changes/`
+- ✅ Test before committing

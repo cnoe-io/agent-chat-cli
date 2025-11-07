@@ -1,6 +1,5 @@
 """Test UserInputMetaData prefix parsing"""
 
-import pytest
 from agent_chat_cli.a2a_client import parse_structured_response
 
 

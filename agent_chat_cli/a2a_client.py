@@ -959,7 +959,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         # Check if streaming buffer has UserInputMetaData
         has_user_input_metadata = False
         if response_stream_buffer and 'UserInputMetaData:' in response_stream_buffer:
-          debug_log(f"Step 2: UserInputMetaData detected in streaming buffer")
+          debug_log("Step 2: UserInputMetaData detected in streaming buffer")
           has_user_input_metadata = True
 
         if has_user_input_metadata:
@@ -1031,7 +1031,8 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
               debug_log(f"📝 User provided input: {user_data}")
               # Format the user input as a readable message
               formatted_input = "\n".join([f"- {k}: {v}" for k, v in user_data.items()])
-              return send_message(f"Here's the information you requested:\n{formatted_input}", console=console)
+              await handle_user_input(f"Here's the information you requested:\n{formatted_input}", token)
+              return
             else:
               debug_log("❌ User cancelled input")
               return
@@ -1073,7 +1074,7 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
 
         # Check if user input is required (non-streaming fallback)
         if parsed["require_user_input"] and parsed["metadata"]:
-          debug_log(f"🎨 Structured metadata detected (non-streaming) - rendering form")
+          debug_log("🎨 Structured metadata detected (non-streaming) - rendering form")
 
           # Render interactive form
           form_data = render_metadata_form(parsed["metadata"])

@@ -8,6 +8,7 @@ the CLI renders an interactive form.
 """
 
 import json
+from unittest.mock import patch, MagicMock
 from agent_chat_cli.a2a_client import parse_structured_response, render_metadata_form
 from rich.console import Console
 
@@ -104,17 +105,29 @@ def test_render_form_jira():
     console.print("[yellow]Try filling it out (or press Ctrl+C to skip)[/yellow]")
     print()
 
-    try:
-        form_data = render_metadata_form(jira_response["metadata"], console)
+    # Mock user input for testing
+    with patch('rich.prompt.Prompt.ask') as mock_prompt, \
+         patch('rich.prompt.Confirm.ask', return_value=True) as mock_confirm:
+        # Simulate user inputs for each field
+        mock_prompt.side_effect = ["CAIPE", "Bug", "Test Summary", "Test Description"]
 
-        if form_data:
-            print("\n✅ Form submitted successfully!")
-            print("Data to send to agent:")
-            print(json.dumps(form_data, indent=2))
-        else:
-            print("\n⚠️  Form cancelled")
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Test skipped (Ctrl+C)")
+        try:
+            form_data = render_metadata_form(jira_response["metadata"], console)
+
+            if form_data:
+                print("\n✅ Form submitted successfully!")
+                print("Data to send to agent:")
+                print(json.dumps(form_data, indent=2))
+
+                # Verify the form data
+                assert form_data["project_key"] == "CAIPE"
+                assert form_data["issue_type"] == "Bug"
+                assert form_data["summary"] == "Test Summary"
+                assert form_data["description"] == "Test Description"
+            else:
+                print("\n⚠️  Form cancelled")
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Test skipped (Ctrl+C)")
 
 def test_render_form_github():
     """Test rendering GitHub issue form"""
@@ -129,17 +142,28 @@ def test_render_form_github():
     console.print("[yellow]Try filling it out (or press Ctrl+C to skip)[/yellow]")
     print()
 
-    try:
-        form_data = render_metadata_form(github_response["metadata"], console)
+    # Mock user input for testing
+    with patch('rich.prompt.Prompt.ask') as mock_prompt, \
+         patch('rich.prompt.Confirm.ask', return_value=True) as mock_confirm:
+        # Simulate user inputs for each field
+        mock_prompt.side_effect = ["owner/repo", "Test Issue", "bug,enhancement"]
 
-        if form_data:
-            print("\n✅ Form submitted successfully!")
-            print("Data to send to agent:")
-            print(json.dumps(form_data, indent=2))
-        else:
-            print("\n⚠️  Form cancelled")
-    except KeyboardInterrupt:
-        print("\n\n⚠️  Test skipped (Ctrl+C)")
+        try:
+            form_data = render_metadata_form(github_response["metadata"], console)
+
+            if form_data:
+                print("\n✅ Form submitted successfully!")
+                print("Data to send to agent:")
+                print(json.dumps(form_data, indent=2))
+
+                # Verify the form data
+                assert form_data["repository"] == "owner/repo"
+                assert form_data["title"] == "Test Issue"
+                assert form_data["labels"] == "bug,enhancement"
+            else:
+                print("\n⚠️  Form cancelled")
+        except KeyboardInterrupt:
+            print("\n\n⚠️  Test skipped (Ctrl+C)")
 
 if __name__ == "__main__":
     console = Console()
