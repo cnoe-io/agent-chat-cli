@@ -36,8 +36,9 @@ import shutil
 import json
 import ast
 from uuid import uuid4
-from typing import Any
+from typing import Any, Optional, List
 
+from pydantic import BaseModel, Field
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.markdown import Markdown
@@ -97,6 +98,35 @@ if DEBUG:
 console = Console()
 
 SESSION_CONTEXT_ID = uuid4().hex
+
+
+# Pydantic models for structured responses (matching backend schemas)
+class InputField(BaseModel):
+    """Input field metadata for dynamic forms"""
+    field_name: str = Field(description="Field name")
+    field_description: str = Field(description="Field description")
+    field_values: Optional[List[str]] = Field(default=None, description="Dropdown options")
+
+
+class Metadata(BaseModel):
+    """Response metadata"""
+    user_input: bool = Field(description="Whether user input is required")
+    input_fields: Optional[List[InputField]] = Field(default=None, description="Input fields for forms")
+
+
+class PlatformEngineerResponse(BaseModel):
+    """Platform Engineer structured response"""
+    is_task_complete: bool = Field(description="Whether task is complete")
+    require_user_input: bool = Field(description="Whether user input is required")
+    content: str = Field(description="Response content")
+    metadata: Optional[Metadata] = Field(default=None, description="Metadata for forms")
+
+
+class JarvisResponse(BaseModel):
+    """Jarvis agent structured response"""
+    answer: str = Field(description="Response answer")
+    metadata: Metadata = Field(description="Metadata for forms")
+
 
 def debug_log(message: str) -> None:
   """
@@ -233,12 +263,13 @@ def summarize_tool_notification(raw_text: str) -> str:
 
 def parse_structured_response(text: str) -> dict:
   """
-  Parse structured JSON response from agent.
+  Parse structured JSON response from agent using Pydantic models.
   Returns dict with: content, require_user_input, metadata
 
-  Supports two formats:
+  Supports multiple formats:
   1. UserInputMetaData: {...} - Explicit prefix format
-  2. Plain JSON {...} - Legacy format
+  2. Pure JSON: PlatformEngineerResponse or JarvisResponse
+  3. Mixed text + embedded JSON - strips JSON and returns clean text
   """
   if not text or not text.strip():
     return {"content": text, "require_user_input": False, "metadata": None}
@@ -250,32 +281,121 @@ def parse_structured_response(text: str) -> dict:
     try:
       # Extract JSON after the prefix
       json_str = text.strip()[len(user_input_metadata_prefix):].strip()
-      data = json.loads(json_str)
+      response = PlatformEngineerResponse.model_validate_json(json_str)
+      debug_log(f"✅ UserInputMetaData parsed with Pydantic")
+      return {
+        "content": response.content,
+        "require_user_input": response.require_user_input,
+        "metadata": response.metadata.model_dump() if response.metadata else None
+      }
+    except Exception as e:
+      debug_log(f"❌ Failed to parse UserInputMetaData: {e}")
+      # Fall through to try other formats
 
-      if isinstance(data, dict):
-        debug_log(f"🎨 UserInputMetaData parsed successfully: {data.get('metadata', {}).get('input_fields', [])}")
-        return {
-          "content": data.get("content", text),
-          "require_user_input": data.get("require_user_input", False),
-          "metadata": data.get("metadata")
-        }
-    except (json.JSONDecodeError, ValueError) as e:
-      debug_log(f"❌ Failed to parse UserInputMetaData JSON: {e}")
-      # Fall through to try regular JSON parsing
-
-  # Try regular JSON parsing (legacy format)
+  # Try pure JSON parsing with Pydantic models
   try:
     data = json.loads(text.strip())
-    if isinstance(data, dict):
+
+    # Try PlatformEngineerResponse
+    try:
+      response = PlatformEngineerResponse.model_validate(data)
+      debug_log(f"✅ PlatformEngineerResponse validated with Pydantic")
+      return {
+        "content": response.content,
+        "require_user_input": response.require_user_input,
+        "metadata": response.metadata.model_dump() if response.metadata else None
+      }
+    except Exception:
+      pass
+
+    # Try JarvisResponse
+    try:
+      response = JarvisResponse.model_validate(data)
+      debug_log(f"✅ JarvisResponse validated with Pydantic - converting to standard format")
+      return {
+        "content": response.answer,
+        "require_user_input": True,
+        "metadata": response.metadata.model_dump()
+      }
+    except Exception:
+      pass
+
+    # Legacy format without Pydantic validation
+    if "content" in data:
       return {
         "content": data.get("content", text),
         "require_user_input": data.get("require_user_input", False),
         "metadata": data.get("metadata")
       }
+
   except (json.JSONDecodeError, ValueError):
     pass
 
-  return {"content": text, "require_user_input": False, "metadata": None}
+  # Text with embedded JSON - strip all JSON and return clean text
+  debug_log("🧹 Attempting to strip embedded JSON from mixed text")
+  clean_text = _strip_embedded_json(text)
+
+  return {"content": clean_text, "require_user_input": False, "metadata": None}
+
+
+def _strip_embedded_json(text: str) -> str:
+  """
+  Helper function to strip embedded JSON from mixed text.
+
+  Args:
+    text: Text potentially containing embedded JSON
+
+  Returns:
+    Clean text with JSON removed
+  """
+  clean_text = text
+  cleaned_parts = []
+
+  # Look for JSON patterns and strip them
+  json_patterns = [
+    '{"status":',
+    '{"answer":',
+    '{"is_task_complete":',
+    '{"action_taken":',
+    '{"formatted_text":',  # format_markdown tool output
+    'response='
+  ]
+
+  for pattern in json_patterns:
+    if pattern in clean_text:
+      debug_log(f"🧹 Found pattern '{pattern}' - stripping JSON")
+      parts = clean_text.split(pattern, 1)  # Split only once
+
+      if len(parts) > 0:
+        # Keep text before JSON
+        before_json = parts[0].strip()
+        if before_json:
+          cleaned_parts.append(before_json)
+
+        # Try to find end of JSON and keep text after
+        if len(parts) > 1:
+          # Find closing brace using brace counting
+          brace_count = 1
+          end_idx = 0
+          for i, char in enumerate(parts[1]):
+            if char == '{':
+              brace_count += 1
+            elif char == '}':
+              brace_count -= 1
+              if brace_count == 0:
+                end_idx = i + 1
+                break
+
+          # Keep text after JSON
+          if end_idx > 0 and end_idx < len(parts[1]):
+            after_json = parts[1][end_idx:].strip()
+            if after_json:
+              cleaned_parts.append(after_json)
+
+        clean_text = '\n\n'.join(cleaned_parts) if cleaned_parts else parts[0].strip()
+        break
+
+  return clean_text
 
 
 def render_metadata_form(metadata: dict, console: Console = None) -> dict:
@@ -540,7 +660,8 @@ def extract_response_text(response) -> str:
 
   This function handles various response formats and attempts to extract
   meaningful text content from different parts of the response structure.
-  It supports both artifacts and status message formats.
+  It supports both artifacts and status message formats, including DataPart
+  for structured JSON responses.
 
   Args:
     response: The A2A response object (can be Pydantic model, dict, etc.)
@@ -571,14 +692,25 @@ def extract_response_text(response) -> str:
       first_artifact = artifacts[0]
       if isinstance(first_artifact, dict) and first_artifact.get("parts"):
         for part in first_artifact["parts"]:
+          # Handle TextPart
           if part.get("kind") == "text":
             return part.get("text", "").strip()
+          # Handle DataPart (structured JSON like JarvisResponse)
+          elif part.get("kind") == "data" and part.get("data"):
+            debug_log("📦 DataPart detected in artifact - converting to JSON string")
+            return json.dumps(part.get("data"))
 
     # Fallback to status message
     message = result.get("status", {}).get("message", {})
     for part in message.get("parts", []):
+      # Handle TextPart
       if part.get("kind") == "text":
         return part.get("text", "").strip()
+      # Handle DataPart
+      elif part.get("kind") == "data" and part.get("data"):
+        debug_log("📦 DataPart detected in status message - converting to JSON string")
+        return json.dumps(part.get("data"))
+      # Legacy format
       elif "text" in part:
         return part["text"].strip()
 
