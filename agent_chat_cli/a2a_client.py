@@ -281,13 +281,25 @@ def parse_structured_response(text: str) -> dict:
     try:
       # Extract JSON after the prefix
       json_str = text.strip()[len(user_input_metadata_prefix):].strip()
-      response = PlatformEngineerResponse.model_validate_json(json_str)
-      debug_log(f"✅ UserInputMetaData parsed with Pydantic")
-      return {
-        "content": response.content,
-        "require_user_input": response.require_user_input,
-        "metadata": response.metadata.model_dump() if response.metadata else None
-      }
+      # Try Pydantic validation first
+      try:
+        response = PlatformEngineerResponse.model_validate_json(json_str)
+        debug_log("✅ UserInputMetaData parsed with Pydantic")
+        return {
+          "content": response.content,
+          "require_user_input": response.require_user_input,
+          "metadata": response.metadata.model_dump() if response.metadata else None
+        }
+      except Exception:
+        # Fall back to legacy JSON parsing if Pydantic validation fails
+        data = json.loads(json_str)
+        if "content" in data:
+          debug_log("✅ UserInputMetaData parsed with legacy format")
+          return {
+            "content": data.get("content", text),
+            "require_user_input": data.get("require_user_input", False),
+            "metadata": data.get("metadata")
+          }
     except Exception as e:
       debug_log(f"❌ Failed to parse UserInputMetaData: {e}")
       # Fall through to try other formats
@@ -299,7 +311,7 @@ def parse_structured_response(text: str) -> dict:
     # Try PlatformEngineerResponse
     try:
       response = PlatformEngineerResponse.model_validate(data)
-      debug_log(f"✅ PlatformEngineerResponse validated with Pydantic")
+      debug_log("✅ PlatformEngineerResponse validated with Pydantic")
       return {
         "content": response.content,
         "require_user_input": response.require_user_input,
@@ -311,7 +323,7 @@ def parse_structured_response(text: str) -> dict:
     # Try JarvisResponse
     try:
       response = JarvisResponse.model_validate(data)
-      debug_log(f"✅ JarvisResponse validated with Pydantic - converting to standard format")
+      debug_log("✅ JarvisResponse validated with Pydantic - converting to standard format")
       return {
         "content": response.answer,
         "require_user_input": True,
@@ -396,6 +408,22 @@ def _strip_embedded_json(text: str) -> str:
         break
 
   return clean_text
+
+
+# Public alias for backward compatibility with tests
+def clean_mixed_agent_content(text: str) -> str:
+  """
+  Public function to clean mixed agent content (text with embedded JSON).
+  
+  This is an alias for _strip_embedded_json for use in tests and external code.
+  
+  Args:
+    text: Text potentially containing embedded JSON
+    
+  Returns:
+    Clean text with JSON removed
+  """
+  return _strip_embedded_json(text)
 
 
 def render_metadata_form(metadata: dict, console: Console = None) -> dict:
@@ -878,9 +906,26 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
             if hasattr(event, 'artifact') and event.artifact and hasattr(event.artifact, 'name'):
                 artifact_name = event.artifact.name
 
+            # Extract metadata from the raw chunk if available (A2A SDK might not parse it into the event object)
+            chunk_metadata = None
+            if hasattr(chunk, 'root') and hasattr(chunk.root, 'result'):
+              try:
+                result_dict = chunk.root.result.model_dump(mode='json') if hasattr(chunk.root.result, 'model_dump') else None
+                if isinstance(result_dict, dict):
+                  chunk_metadata = result_dict.get('metadata')
+                  if chunk_metadata:
+                    debug_log(f"Found metadata in chunk result: {chunk_metadata}")
+              except Exception as e:
+                debug_log(f"Could not extract metadata from chunk: {e}")
+
             debug_log("=" * 80)
             debug_log(f"EVENT #{chunk_count}: Type={event_type}, Artifact={artifact_name}, Has_Status={hasattr(event, 'status')}")
             debug_log(f"Event attributes: {[attr for attr in dir(event) if not attr.startswith('_')]}")
+            # Check for metadata on the event
+            if hasattr(event, 'metadata'):
+              debug_log(f"Event has metadata attribute: {event.metadata}")
+            elif hasattr(event, '__dict__'):
+              debug_log(f"Event __dict__: {event.__dict__}")
 
             text = ""
             intermediate_state = False
@@ -896,24 +941,145 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
               if event.status.state in [TaskState.working]:
                 intermediate_state = True
 
+              # Check if this is a tool notification via TaskStatusUpdateEvent
+              # Tool notifications now use TaskStatusUpdateEvent with metadata.tool_notification=True
+              # Try to get metadata from event object first, then from chunk if available
+              event_metadata = getattr(event, 'metadata', None) or chunk_metadata or {}
+              debug_log(f"TaskStatusUpdateEvent metadata: {event_metadata} (from event: {getattr(event, 'metadata', None)}, from chunk: {chunk_metadata})")
+              if event_metadata and event_metadata.get('tool_notification'):
+                # This is a tool notification - handle it in Tools Update Panel
+                tool_status = event_metadata.get('status', 'started')
+                tool_name = event_metadata.get('tool_name', 'unknown')
+                debug_log(f"Tool notification detected: tool_name={tool_name}, status={tool_status}")
+
+                # Stop spinner if not already stopped
+                if not spinner_stopped:
+                  notify_streaming_started()
+                  try:
+                    await wait_spinner_cleared()
+                  except Exception:
+                    pass
+                  spinner_stopped = True
+
+                # Format notification text
+                if tool_status == 'started':
+                  notification_text = summarize_tool_notification(text) or f"Calling {tool_name}"
+                  if notification_text and notification_text not in tool_seen:
+                    tool_seen.add(notification_text)
+                    tool_entries.append(f"⏳ {notification_text}")
+                    recent = tool_entries[-8:]
+                    tool_markdown = "\n".join(f"- {line}" for line in recent)
+
+                    # Append tool started notification to execution plan
+                    # Extract the tool name from notification_text
+                    tool_display_name = notification_text.replace("⏳", "").replace("Calling", "").strip()
+                    # Clean up common patterns like "Calling Tool X" -> "X"
+                    tool_display_name = tool_display_name.replace("Tool ", "").strip()
+                    execution_item = f"- ⏳ Tool {tool_display_name} started"
+
+                    if execution_markdown:
+                      # Append to execution plan if not already present
+                      if execution_item not in execution_markdown:
+                        # Find the last checklist item and append after it
+                        execution_lines = execution_markdown.split('\n')
+                        last_item_idx = -1
+                        for i in range(len(execution_lines) - 1, -1, -1):
+                          line = execution_lines[i].strip()
+                          if line and (line.startswith('- ✅') or line.startswith('- ❌') or line.startswith('- ⏳') or line.startswith('- 🔄')):
+                            last_item_idx = i
+                            break
+                        if last_item_idx >= 0:
+                          execution_lines.insert(last_item_idx + 1, execution_item)
+                        else:
+                          # No checklist items found, append at the end
+                          execution_lines.append(execution_item)
+                        execution_markdown = '\n'.join(execution_lines)
+                    else:
+                      # No execution plan yet, create a simple one
+                      execution_markdown = f"📋 **Execution Plan**\n\n{execution_item}"
+
+                    update_live()
+                elif tool_status in ['completed', 'failed']:
+                  completion_text = summarize_tool_notification(text) or f"{tool_name} {tool_status}"
+                  if completion_text and completion_text not in tool_seen:
+                    tool_seen.add(completion_text)
+                    icon = "❌" if tool_status == 'failed' else "✅"
+                    tool_entries.append(f"{icon} {completion_text}")
+                    recent = tool_entries[-8:]
+                    tool_markdown = "\n".join(f"- {line}" for line in recent)
+
+                    # Update tool completion in execution plan
+                    # Extract the tool name from completion_text (remove emoji and status words)
+                    tool_display_name = completion_text.replace(icon, "").replace("completed", "").replace("failed", "").strip()
+                    # Clean up common patterns like "Tool X completed" -> "X"
+                    tool_display_name = tool_display_name.replace("Tool ", "").strip()
+                    status_text = "completed" if tool_status == 'completed' else "failed"
+                    execution_item = f"- {icon} Tool {tool_display_name} {status_text}"
+                    started_item = f"- ⏳ Tool {tool_display_name} started"
+
+                    if execution_markdown:
+                      execution_lines = execution_markdown.split('\n')
+                      # First, try to find and replace an existing ⏳ item for this tool
+                      replaced = False
+                      for i, line in enumerate(execution_lines):
+                        if line.strip() == started_item:
+                          execution_lines[i] = execution_item
+                          replaced = True
+                          break
+
+                      # If not replaced, append as new item
+                      if not replaced and execution_item not in execution_markdown:
+                        # Find the last checklist item and append after it
+                        last_item_idx = -1
+                        for i in range(len(execution_lines) - 1, -1, -1):
+                          line = execution_lines[i].strip()
+                          if line and (line.startswith('- ✅') or line.startswith('- ❌') or line.startswith('- ⏳') or line.startswith('- 🔄')):
+                            last_item_idx = i
+                            break
+                        if last_item_idx >= 0:
+                          execution_lines.insert(last_item_idx + 1, execution_item)
+                        else:
+                          # No checklist items found, append at the end
+                          execution_lines.append(execution_item)
+
+                      execution_markdown = '\n'.join(execution_lines)
+                    else:
+                      # No execution plan yet, create a simple one
+                      execution_markdown = f"📋 **Execution Plan**\n\n{execution_item}"
+
+                    update_live()
+
+                # Don't add tool notifications to streaming output
+                continue
+
             elif hasattr(event, 'artifact') and event.artifact:
               # Skip text extraction for artifacts that shouldn't go into streaming buffer
               if artifact_name not in ['tool_notification_start', 'tool_notification_end',
                                         'execution_plan_update', 'execution_plan_status_update',
                                         'execution_plan_streaming']:
                 artifact = event.artifact
-                debug_log(f"Found artifact: {type(artifact)}, has parts: {hasattr(artifact, 'parts')}")
+                debug_log(f"🔍 Found artifact: name='{artifact_name}', type={type(artifact)}, has parts: {hasattr(artifact, 'parts')}")
                 if hasattr(artifact, 'parts') and artifact.parts:
-                  debug_log(f"Artifact has {len(artifact.parts)} parts")
+                  debug_log(f"🔍 Artifact has {len(artifact.parts)} parts")
                   for j, part in enumerate(artifact.parts):
-                    debug_log(f"Part {j}: {type(part)}, attributes: {[attr for attr in dir(part) if not attr.startswith('_')]}")
-                    if hasattr(part, 'text'):
-                      text += part.text
+                    debug_log(f"🔍 Part {j}: type={type(part)}, has text={hasattr(part, 'text')}, has root={hasattr(part, 'root')}")
+                    if hasattr(part, 'root') and hasattr(part.root, 'text'):
+                      part_text = part.root.text
+                      text += part_text
+                      debug_log(f"🔍 Extracted from part[{j}].root.text: {len(part_text)} chars")
+                    elif hasattr(part, 'text'):
+                      part_text = part.text
+                      text += part_text
+                      debug_log(f"🔍 Extracted from part[{j}].text: {len(part_text)} chars")
                     elif hasattr(part, 'kind') and part.kind == 'text' and hasattr(part, 'text'):
-                      text += part.text
-                    elif hasattr(part, 'root') and hasattr(part.root, 'text'):
-                      text += part.root.text
-                debug_log(f"Extracted text from artifact '{artifact_name}': '{text[:100]}...' ({len(text)} chars)")
+                      part_text = part.text
+                      text += part_text
+                      debug_log(f"🔍 Extracted from part[{j}].kind=text: {len(part_text)} chars")
+                    else:
+                      debug_log(f"🔍 Part {j} has no extractable text - attributes: {[attr for attr in dir(part) if not attr.startswith('_')]}")
+                else:
+                  debug_log(f"🔍 Artifact '{artifact_name}' has no parts or parts is empty")
+                debug_log(f"🔍 Total extracted text from artifact '{artifact_name}': {len(text)} chars, preview: '{text[:100]}...'")
               else:
                 # Still extract for tool notifications but they'll be handled specially
                 artifact = event.artifact
@@ -938,6 +1104,23 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                   # We'll use partial_result_text after the Live context exits
                 # DON'T clear streaming panel yet - keep it visible until we exit Live context
                 # streaming_markdown will be cleared after the Live context exits
+                update_live()
+                continue
+
+              if artifact_name in ['complete_result', 'final_result']:
+                debug_log(f"Step 2: Received {artifact_name} event with {len(text)} chars")
+                if text:
+                  # Handle complete_result/final_result the same way as partial_result
+                  # These are clean final results that should replace streaming content
+                  complete_result_text = sanitize_stream_text(text)
+                  debug_log(f"Step 2: After sanitization: {len(complete_result_text)} chars")
+                  debug_log(f"Step 2: First 200 chars: {complete_result_text[:200]}")
+                  # Store complete result for use after Live context exits
+                  # Prefer complete_result over partial_result if both are present
+                  if not partial_result_text or artifact_name == 'complete_result':
+                    partial_result_text = complete_result_text
+                    debug_log(f"Step 2: Using {artifact_name} for final display")
+                # DON'T clear streaming panel yet - keep it visible until we exit Live context
                 update_live()
                 continue
 
@@ -1018,22 +1201,24 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                 # Don't add tool notifications to streaming output
                 continue
 
-              # Skip other non-content artifacts
-              if artifact_name in ['final_result', 'complete_result']:
-                # These are handled by partial_result logic or task completion
-                continue
+              # Note: complete_result and final_result are now handled above (lines 1013-1028)
+              # They're extracted and stored in partial_result_text for final display
 
             # Process text for streaming display
             # Only process text from artifacts, NOT from status messages
             # Status messages are metadata and should not go into the response buffer
             # streaming_result: Goes into streaming panel AND response_stream_buffer
-            # partial_result: Already handled above with continue at line 671
-            # tool_notification_*: Already handled above with continue at lines 687, 698
-            # execution_plan_*: Already handled above with continue at lines 677, 682, 686
+            # partial_result: Already handled above with continue at line 930
+            # tool_notification_*: Already handled above with continue at lines 991, 1010
+            # TaskStatusUpdateEvent with tool_notification: Already handled above with continue at line 936
+            # execution_plan_*: Already handled above with continue at lines 944, 966, 988
             # By this point, we only have streaming_result artifacts (status text is skipped)
+            # Tool notifications are handled via TaskStatusUpdateEvent with metadata, so they should NOT appear in streaming_result
             if text and artifact_name:
+              debug_log(f"🔍 Processing artifact '{artifact_name}' with {len(text)} chars of text")
               # Stop spinner if not already stopped (fallback for streaming content)
               if not spinner_stopped:
+                debug_log("🔍 Stopping spinner and initializing Live dashboard")
                 notify_streaming_started()
                 try:
                   await wait_spinner_cleared()
@@ -1041,8 +1226,23 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                   pass
                 spinner_stopped = True
 
+              # Initialize Live dashboard if not already started (for streaming_result that arrives before execution plan)
+              if not live_started:
+                debug_log("🔍 Initializing Live dashboard for streaming_result")
+                live = Live(build_dashboard(execution_markdown, tool_markdown, response_markdown, streaming_markdown),
+                           console=console,
+                           refresh_per_second=15,
+                           transient=False)
+                live.start()
+                live_started = True
+                debug_log("🔍 Live dashboard initialized and started")
+              else:
+                debug_log("🔍 Live dashboard already started")
+
               clean_streaming_text = sanitize_stream_text(text)
+              debug_log(f"🔍 After sanitization: {len(clean_streaming_text)} chars")
               if not clean_streaming_text:
+                debug_log("🔍 Skipping empty text after sanitization")
                 continue
 
               # Deduplicate: skip if this exact text was just processed
