@@ -712,6 +712,8 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         final_state_text = ""
         all_text = ""
         partial_result_text = ""
+        complete_result_text = ""
+        final_result_text = ""
         last_event_signature = ""
         final_response_text = ""  # Will be set after Live context exits
 
@@ -886,9 +888,32 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
                 # Don't add tool notifications to streaming output
                 continue
 
-              # Skip other non-content artifacts
-              if artifact_name in ['final_result', 'complete_result']:
-                # These are handled by partial_result logic or task completion
+              if artifact_name == 'complete_result':
+                debug_log(f"Step 2: Received complete_result event with {len(text)} chars")
+                if text:
+                  complete_result_text = sanitize_stream_text(text)
+                  debug_log(f"Step 2: After sanitization: {len(complete_result_text)} chars")
+                  debug_log(f"Step 2: First 200 chars: {complete_result_text[:200]}")
+                  # Store complete result for use after Live context exits
+                  # DON'T set response_markdown here - that displays it in Live dashboard
+                  # We'll use complete_result_text after the Live context exits
+                # DON'T clear streaming panel yet - keep it visible until we exit Live context
+                # streaming_markdown will be cleared after the Live context exits
+                update_live()
+                continue
+
+              if artifact_name == 'final_result':
+                debug_log(f"Step 2: Received final_result event with {len(text)} chars")
+                if text:
+                  final_result_text = sanitize_stream_text(text)
+                  debug_log(f"Step 2: After sanitization: {len(final_result_text)} chars")
+                  debug_log(f"Step 2: First 200 chars: {final_result_text[:200]}")
+                  # Store final result for use after Live context exits
+                  # DON'T set response_markdown here - that displays it in Live dashboard
+                  # We'll use final_result_text after the Live context exits
+                # DON'T clear streaming panel yet - keep it visible until we exit Live context
+                # streaming_markdown will be cleared after the Live context exits
+                update_live()
                 continue
 
             # Process text for streaming display
@@ -953,8 +978,12 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
         debug_log(f"Step 1: Tracked streaming content - {len(response_stream_buffer)} chars")
 
         # STEP 2 COMPLETE: Prepare final response for display outside Live context
-        # Prefer streaming buffer if it contains UserInputMetaData, otherwise use partial_result
-        # This ensures we get the structured JSON format
+        # Priority order:
+        # 1. UserInputMetaData in streaming buffer (preserves structured format)
+        # 2. partial_result (authoritative result from supervisor/sub-agent)
+        # 3. complete_result (authoritative final result from agent)
+        # 4. final_result (authoritative final result from supervisor)
+        # 5. response_stream_buffer (fallback - accumulated chunks)
 
         # Check if streaming buffer has UserInputMetaData
         has_user_input_metadata = False
@@ -973,6 +1002,16 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           debug_log(f"Step 2: Using partial_result for final display ({len(partial_result_text)} chars)")
           debug_log(f"Step 2: partial_result_text first 200 chars: {partial_result_text[:200]}")
           final_response_text = partial_result_text
+          debug_log(f"Step 2: final_response_text set to {len(final_response_text)} chars")
+        elif complete_result_text:
+          debug_log(f"Step 2: Using complete_result for final display ({len(complete_result_text)} chars)")
+          debug_log(f"Step 2: complete_result_text first 200 chars: {complete_result_text[:200]}")
+          final_response_text = complete_result_text
+          debug_log(f"Step 2: final_response_text set to {len(final_response_text)} chars")
+        elif final_result_text:
+          debug_log(f"Step 2: Using final_result for final display ({len(final_result_text)} chars)")
+          debug_log(f"Step 2: final_result_text first 200 chars: {final_result_text[:200]}")
+          final_response_text = final_result_text
           debug_log(f"Step 2: final_response_text set to {len(final_response_text)} chars")
         elif response_stream_buffer or final_state_text or all_text:
           debug_log("Step 2: No partial_result, using accumulated streaming text")
@@ -1009,6 +1048,8 @@ async def handle_user_input(user_input: str, token: str = None) -> None:
           else:
             debug_log("final_response_text is EMPTY!")
             debug_log(f"partial_result_text length = {len(partial_result_text) if partial_result_text else 0}")
+            debug_log(f"complete_result_text length = {len(complete_result_text) if complete_result_text else 0}")
+            debug_log(f"final_result_text length = {len(final_result_text) if final_result_text else 0}")
             debug_log(f"response_stream_buffer length = {len(response_stream_buffer)}")
 
         # Final render outside Live context - use final_response_text
