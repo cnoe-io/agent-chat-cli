@@ -1,5 +1,7 @@
 ## Unreleased
 
+## 0.2.18 (2025-11-07)
+
 ### Feat
 
 - prioritize streaming buffer for UserInputMetaData detection
