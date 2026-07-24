@@ -62,10 +62,13 @@ export async function runConfigSet(key: string, value: string): Promise<void> {
     const v = normalizeConfigUrl(value, "server.url");
     const settings = readSettings();
     settings.server = { ...settings.server, url: v };
+    // Single-URL Grid/caipe-ui setups: OAuth and BFF share the same host.
+    settings.auth = { ...settings.auth, url: v };
     writeSettings(settings);
     // Invalidate cached discovery doc — new server may have different endpoints
     clearAgentConfigCache();
     process.stdout.write(`Set server.url = ${v}\n`);
+    process.stdout.write(`Set auth.url = ${v}\n`);
     return;
   }
 
