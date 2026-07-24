@@ -2,35 +2,58 @@
 
 AI-assisted coding, workflows, and platform engineering from the terminal.
 
-CAIPE CLI is a dedicated TypeScript/Bun CLI that connects to a [CAIPE / Grid server](https://github.com/cnoe-io/ai-platform-engineering) via the AG-UI streaming protocol. It provides an interactive chat REPL, headless mode for CI/CD pipelines, skill management, and secure credential storage.
+CAIPE CLI is a dedicated TypeScript/Bun CLI that connects to a [CAIPE server](https://github.com/cnoe-io/ai-platform-engineering) via the A2A (Agent-to-Agent) or AG-UI streaming protocol. It provides an interactive chat REPL, headless mode for CI/CD pipelines, skill management, and secure credential storage.
 
 ## Installation
 
-### Quick install (recommended)
+### Run with npx (no global install)
+
+From npm (after the first `caipe/v*` release is published):
+
+```bash
+npx caipe --version
+npx caipe config set server.url https://your-caipe-server.example.com
+npx caipe auth login
+npx caipe chat
+```
+
+From GitHub `main` (runs via bundled `tsx`; Node 20+):
+
+```bash
+npx github:cnoe-io/agent-chat-cli -- --version
+npx github:cnoe-io/agent-chat-cli -- auth login
+```
+
+Use `--` before caipe args when using the `github:` specifier.
+
+### Build from source (one-liner)
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/agent-chat-cli/main/setup-caipe-cli.sh)
+```
+
+With Grid URL: `CAIPE_SERVER_URL=https://grid.preview.outshift.io bash <(curl -fsSL ...)`
+
+### Released binary (curl installer)
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/cnoe-io/agent-chat-cli/main/install.sh | sh
 ```
 
-This downloads the correct binary for your platform (macOS/Linux, arm64/x64), verifies the SHA-256 checksum, and installs to `/usr/local/bin/caipe`.
+Requires a **`caipe/v*.*.*`** GitHub release. Options: `CAIPE_INSTALL_DIR`, `CAIPE_VERSION`.
 
-Options (environment variables):
-- `CAIPE_INSTALL_DIR` — override install directory (default: `/usr/local/bin`)
-- `CAIPE_VERSION` — pin a specific version (default: latest)
-
-### npm
+### npm global
 
 ```bash
 npm install -g caipe
 ```
 
-### Build from source
+### Git clone + compile
 
 ```bash
 git clone https://github.com/cnoe-io/agent-chat-cli.git
 cd agent-chat-cli
-bun install
-npm run compile          # produces dist/caipe (Bun single-file binary)
+bun install && npm rebuild keytar && npm run compile
 ./dist/caipe --version
 ```
 

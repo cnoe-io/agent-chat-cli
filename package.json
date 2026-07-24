@@ -4,8 +4,17 @@
   "description": "AI-assisted coding, workflows, and platform engineering from the terminal",
   "type": "module",
   "bin": {
-    "caipe": "./dist/shim.cjs"
+    "caipe": "./bin/caipe.cjs"
   },
+  "files": [
+    "bin",
+    "dist",
+    "src",
+    "npm",
+    "entitlements.plist",
+    "README.md",
+    "LICENSE"
+  ],
   "scripts": {
     "build": "esbuild src/index.ts --bundle --platform=node --target=node20 --format=cjs --outfile=dist/bundle.cjs --external:keytar --external:fsevents",
     "compile:darwin-arm64": "bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile=dist/caipe-darwin-arm64 && codesign --remove-signature dist/caipe-darwin-arm64 && codesign --sign - --force --entitlements entitlements.plist dist/caipe-darwin-arm64",
@@ -31,7 +40,8 @@
     "marked-terminal": "7.3.0",
     "react": "18.3.1",
     "react-devtools-core": "file:./src/stubs/react-devtools-core",
-    "semver": "7.7.4"
+    "semver": "7.7.4",
+    "tsx": "4.21.0"
   },
   "devDependencies": {
     "@biomejs/biome": "1.9.4",
@@ -40,11 +50,14 @@
     "@types/react": "18.3.28",
     "@types/semver": "7.7.1",
     "esbuild": "0.24.2",
-    "tsx": "4.21.0",
     "typescript": "5.9.3",
     "vitest": "2.1.9"
   },
   "optionalDependencies": {
+    "caipe-darwin-arm64": "0.1.0",
+    "caipe-darwin-x64": "0.1.0",
+    "caipe-linux-arm64": "0.1.0",
+    "caipe-linux-x64": "0.1.0",
     "keytar": "7.9.0"
   },
   "engines": {
