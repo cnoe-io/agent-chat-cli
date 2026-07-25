@@ -3,14 +3,14 @@
  *
  * Architecture:
  *   - Completed turns live in <Static> with rendered markdown.
- *   - While streaming: wait indicator only (no live markdown); full render when done.
+ *   - While streaming: static wait line (1s ticks; optional CAIPE_SPINNER=1 animation).
  *   - User prompts: full-width dim bar; optional * Recap: line above assistant markdown.
  *   - Tools: summary + shell tree while running; persisted tool-activity block when done.
  *   - Local shell (`! cmd`, `| pipe`) requires HITL approval unless CAIPE_SHELL_AUTO_APPROVE=1.
  *   - Assistant markdown: marked-terminal ANSI (one shot after each turn).
  */
 
-import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
+import { Box, Text, useApp, useInput, useStdout } from "ink";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 import { fetchAgents, getAgent } from "../agents/registry.js";
@@ -26,16 +26,15 @@ import {
   readSettings,
   settingsJsonPath,
 } from "../platform/config.js";
-import { StreamWaitLine, type ToolActivityRun, ToolActivityPanel, type ToolRunInfo, UserMessageBar, RecapLine } from "../platform/display.js";
-import {
-  getMarkdownLayoutWidth,
-  getTerminalWidth,
-  AssistantBody,
-  InkDiffBlock,
-} from "../platform/markdown.js";
+import { type ToolActivityRun, ToolActivityPanel } from "../platform/display.js";
+import { maxStaticToolTreeRows } from "../platform/terminal/repl-ui.js";
+import { getMarkdownLayoutWidth, getTerminalWidth } from "../platform/markdown.js";
+import { StaticHistory } from "./StaticHistory.js";
+import { StreamingStatusPanel, type LiveToolRefEntry } from "./StreamingStatusPanel.js";
 import { fetchSupervisorSkills } from "../skills/catalog.js";
 import type { ChatSession } from "./history.js";
-import { isDiffBlock, streamPlainTextEnabled } from "./markdown-stream.js";
+import { patchSessionConversationId } from "./history.js";
+import { streamPlainTextEnabled } from "./markdown-stream.js";
 import { ShellApprovalPrompt } from "./ShellApprovalPrompt.js";
 import { isShellHitlEnabled, type ShellApprovalRequest } from "./shell-hitl.js";
 import { parseInput, pipeThrough, runShellCommand } from "./pipes.js";
@@ -90,7 +89,9 @@ type StaticItem =
   | ({ kind: "assistant-plain"; text: string } & { _key: number })
   | ({ kind: "assistant-segment"; text: string; lead?: boolean; diff?: boolean } & { _key: number })
   | ({ kind: "chunk"; text: string } & { _key: number })
-  | ({ kind: "tool-activity"; elapsed: number; runs: ToolActivityRun[] } & { _key: number })
+  | ({ kind: "tool-activity"; elapsed: number; runs: ToolActivityRun[]; omittedCount?: number } & {
+      _key: number;
+    })
   | ({ kind: "tool"; name: string } & { _key: number });
 type StaticItemInput =
   | { kind: "user"; text: string }
@@ -99,7 +100,7 @@ type StaticItemInput =
   | { kind: "assistant-plain"; text: string }
   | { kind: "assistant-segment"; text: string; lead?: boolean; diff?: boolean }
   | { kind: "chunk"; text: string }
-  | { kind: "tool-activity"; elapsed: number; runs: ToolActivityRun[] }
+  | { kind: "tool-activity"; elapsed: number; runs: ToolActivityRun[]; omittedCount?: number }
   | { kind: "tool"; name: string };
 
 // Internal message for history tracking (not rendered directly)
@@ -114,12 +115,6 @@ function streamTimingMs(envKey: string, fallback: number): number {
 
 /** How often to flush SSE tokens to the screen while streaming. */
 const STREAM_TOKEN_BUFFER_MS = streamTimingMs("CAIPE_STREAM_BUFFER_MS", 50);
-
-type ToolRunState = ToolRunInfo & {
-  completedAt?: number;
-  detail?: string;
-  toolCallId?: string;
-};
 
 // ---------------------------------------------------------------------------
 // Slash command registry
@@ -585,11 +580,13 @@ export function Repl({
   const staticKeyRef = useRef(0);
   const nextKey = () => staticKeyRef.current++;
 
-  // Generation counter — remount Static after /clear; terminalCols also remounts on SIGWINCH.
+  // Generation counter — remount Static after /clear only (not on SIGWINCH).
   const [generation, setGeneration] = useState(0);
 
   // ── History: for sending context to the agent ──
   const historyRef = useRef<HistoryEntry[]>([]);
+  const conversationIdRef = useRef<string | undefined>(session.conversationId);
+  const transcriptHydratedRef = useRef(false);
   const accumulatedRef = useRef(""); // full response text during streaming
 
   // ── Active adapter + agent — swappable via /agents ──
@@ -602,23 +599,19 @@ export function Repl({
   // ── UI state ──
   const [input, setInput] = useState("");
   const [streaming, setStreaming] = useState(false);
-  const [streamElapsed, setStreamElapsed] = useState(0);
-  const [streamPhase, setStreamPhase] = useState<"thinking" | "generating">("generating");
-  const [streamTokenCount, setStreamTokenCount] = useState(0);
   const [totalTokenDisplay, setTotalTokenDisplay] = useState(0);
   const [statusText, setStatusText] = useState<string | null>(null);
   const [pickerIndex, setPickerIndex] = useState(0);
   /** Full agent list while interactive /agents picker is open (filter text = `input`). */
   const [agentPickerCatalog, setAgentPickerCatalog] = useState<Agent[] | null>(null);
   const [agentPickerIndex, setAgentPickerIndex] = useState(0);
-  const [toolRuns, setToolRuns] = useState<ToolRunState[]>([]);
+  const liveToolsRef = useRef<LiveToolRefEntry[]>([]);
   const [localShellRun, setLocalShellRun] = useState<{ cmd: string; startedAt: number } | null>(
     null,
   );
   const [localShellElapsed, setLocalShellElapsed] = useState(0);
   const [shellApproval, setShellApproval] = useState<ShellApprovalRequest | null>(null);
   const shellApprovalResolveRef = useRef<((approved: boolean) => void) | null>(null);
-  const toolRunIdRef = useRef(0);
   const turnToolRunsRef = useRef<ToolActivityRun[]>([]);
   const toolArgsBufferRef = useRef<Map<string, string>>(new Map());
   const toolNameByCallIdRef = useRef<Map<string, string>>(new Map());
@@ -627,6 +620,8 @@ export function Repl({
   const tokenCountRef = useRef(0);
   const streamStartRef = useRef(0);
   const streamTokenRef = useRef(0);
+  const streamPhaseRef = useRef<"thinking" | "generating">("generating");
+  const toolRunsDetailTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sessionStartRef = useRef(Date.now());
   const ctrlDCountRef = useRef(0);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -686,7 +681,35 @@ export function Repl({
     [pushStatic],
   );
 
-  const recordCompletedToolRun = useCallback((r: ToolRunState, completedAt: number) => {
+  // Restore saved transcript when resuming a session (`caipe chat --resume <id>`).
+  useEffect(() => {
+    if (transcriptHydratedRef.current || session.messages.length === 0) return;
+    transcriptHydratedRef.current = true;
+    for (const msg of session.messages) {
+      if (msg.role === "user") {
+        pushStatic({ kind: "user", text: msg.content });
+        historyRef.current.push({ role: "user", content: msg.content });
+      } else {
+        const { recap, body } = extractRecap(msg.content);
+        const displayBody = body.trim() ? body : msg.content;
+        if (recap) pushStatic({ kind: "recap", text: recap });
+        pushStatic({ kind: "assistant", text: displayBody });
+        historyRef.current.push({ role: "assistant", content: msg.content });
+      }
+    }
+    const approxTokens = Math.ceil(
+      session.messages.reduce((n, m) => n + m.content.length, 0) / 4,
+    );
+    tokenCountRef.current = approxTokens;
+    setTotalTokenDisplay(approxTokens);
+    const shortId = session.sessionId.slice(0, 8);
+    pushAssistantPlain(
+      `Resumed session ${shortId} · ${session.messages.length} message(s)` +
+        (session.conversationId ? " · server thread linked" : ""),
+    );
+  }, [session.messages, session.sessionId, session.conversationId, pushStatic, pushAssistantPlain]);
+
+  const recordCompletedToolRun = useCallback((r: LiveToolRefEntry, completedAt: number) => {
     turnToolRunsRef.current.push({
       name: r.name,
       detail: r.detail,
@@ -697,17 +720,20 @@ export function Repl({
   const flushToolActivityStatic = useCallback(
     (elapsed: number) => {
       const now = Date.now();
-      setToolRuns((prev) => {
-        for (const r of prev) {
-          if (!r.completedAt) recordCompletedToolRun(r, now);
-        }
-        return [];
-      });
-      if (turnToolRunsRef.current.length > 0) {
+      for (const r of liveToolsRef.current) {
+        recordCompletedToolRun(r, now);
+      }
+      liveToolsRef.current = [];
+      const all = turnToolRunsRef.current;
+      if (all.length > 0) {
+        const max = maxStaticToolTreeRows();
+        const omitted = Math.max(0, all.length - max);
+        const runs = omitted > 0 ? all.slice(-max) : all;
         pushStatic({
           kind: "tool-activity",
           elapsed,
-          runs: [...turnToolRunsRef.current],
+          runs,
+          omittedCount: omitted > 0 ? omitted : undefined,
         });
         turnToolRunsRef.current = [];
       }
@@ -718,17 +744,11 @@ export function Repl({
 
   const startToolRun = useCallback(
     (name: string, toolCallId?: string) => {
-      setToolRuns((prev) => {
-        const now = Date.now();
-        for (const r of prev) {
-          if (!r.completedAt) recordCompletedToolRun(r, now);
-        }
-        const updated = prev.map((r) => (r.completedAt ? r : { ...r, completedAt: now }));
-        return [
-          ...updated,
-          { id: toolRunIdRef.current++, name, startedAt: now, toolCallId },
-        ];
-      });
+      const now = Date.now();
+      for (const r of liveToolsRef.current) {
+        recordCompletedToolRun(r, now);
+      }
+      liveToolsRef.current = [{ name, toolCallId, startedAt: now }];
     },
     [recordCompletedToolRun],
   );
@@ -739,11 +759,17 @@ export function Repl({
     toolArgsBufferRef.current.set(toolCallId, next);
     const cmd = commandFromToolArgsBuffer(next);
     if (!cmd) return;
-    setToolRuns((runs) =>
-      runs.map((r) =>
-        r.toolCallId === toolCallId && !r.completedAt ? { ...r, detail: cmd } : r,
-      ),
-    );
+    if (toolRunsDetailTimerRef.current) {
+      clearTimeout(toolRunsDetailTimerRef.current);
+    }
+    toolRunsDetailTimerRef.current = setTimeout(() => {
+      toolRunsDetailTimerRef.current = null;
+      const live = liveToolsRef.current;
+      const idx = live.findIndex((t) => t.toolCallId === toolCallId);
+      if (idx >= 0 && live[idx]) {
+        live[idx] = { ...live[idx], detail: cmd };
+      }
+    }, 400);
   }, []);
 
   const tryCaptureToolDiff = useCallback(
@@ -763,9 +789,8 @@ export function Repl({
     const diffs = pendingToolDiffsRef.current;
     if (diffs.length === 0) return;
     pendingToolDiffsRef.current = [];
-    for (const text of diffs) {
-      pushStatic({ kind: "assistant-segment", text, diff: true, lead: false });
-    }
+    const text = diffs.length === 1 ? diffs[0]! : diffs.join("\n");
+    pushStatic({ kind: "assistant-segment", text, diff: true, lead: false });
   }, [pushStatic]);
 
   const clearToolRuns = useCallback(
@@ -802,9 +827,8 @@ export function Repl({
       if (!text) return;
       pendingTokensRef.current = "";
       accumulatedRef.current += text;
-      setStreamPhase("generating");
+      streamPhaseRef.current = "generating";
       streamTokenRef.current += Math.ceil(text.length / 4);
-      setStreamTokenCount(streamTokenRef.current);
       emitStreamDelta(text);
     }, STREAM_TOKEN_BUFFER_MS);
   }, [emitStreamDelta]);
@@ -818,9 +842,8 @@ export function Repl({
     if (text) {
       pendingTokensRef.current = "";
       accumulatedRef.current += text;
-      setStreamPhase("generating");
+      streamPhaseRef.current = "generating";
       streamTokenRef.current += Math.ceil(text.length / 4);
-      setStreamTokenCount(streamTokenRef.current);
       emitStreamDelta(text);
     }
   }, [emitStreamDelta]);
@@ -883,22 +906,14 @@ export function Repl({
     setPickerIndex(0);
   }, [input, showPicker]);
 
-  // ── Elapsed timer ──
-  // Only redraws the ~4-line dynamic area (input bar + status), not Static content.
   useEffect(() => {
     if (!streaming) {
-      setStreamElapsed(0);
-      setStreamPhase("generating");
-      setStreamTokenCount(0);
       streamTokenRef.current = 0;
+      streamPhaseRef.current = "generating";
       return;
     }
     streamStartRef.current = Date.now();
-    setStreamPhase("thinking");
-    const id = setInterval(() => {
-      setStreamElapsed(Math.floor((Date.now() - streamStartRef.current) / 1000));
-    }, 250);
-    return () => clearInterval(id);
+    streamPhaseRef.current = "thinking";
   }, [streaming]);
 
   useEffect(() => {
@@ -908,7 +923,7 @@ export function Repl({
     }
     const id = setInterval(() => {
       setLocalShellElapsed(Math.floor((Date.now() - localShellRun.startedAt) / 1000));
-    }, 250);
+    }, 1000);
     return () => clearInterval(id);
   }, [localShellRun]);
 
@@ -937,7 +952,7 @@ export function Repl({
       `\n  Session ended · ${turns} turn${turns !== 1 ? "s" : ""} · ~${tokens} tokens · ${duration}\n\n`,
     );
 
-    onExit({ ...session, agentName: currentAgent.name, messages: finishedMessages });
+    onExit({ ...session, agentName: currentAgent.name, messages: finishedMessages, conversationId: conversationIdRef.current });
     exit();
   }, [session, onExit, exit, currentAgent.name]);
 
@@ -963,6 +978,7 @@ export function Repl({
       })();
       const ep = authEndpoints(sv);
       adapterRef.current = createAdapter(target, ep.streamStart, () => getValidToken(authUrl2));
+      conversationIdRef.current = undefined;
       setCurrentAgent(target);
       pushAssistantPlain(`Switched to agent ${target.displayName ?? target.name}.`);
     },
@@ -1293,7 +1309,7 @@ export function Repl({
       toolNameByCallIdRef.current.clear();
       toolDiffSeenRef.current.clear();
       pendingToolDiffsRef.current = [];
-      setToolRuns([]);
+      liveToolsRef.current = [];
       setStreaming(true);
       if (streamPlainTextEnabled()) {
         pushStatic({ kind: "chunk", text: "" });
@@ -1304,12 +1320,16 @@ export function Repl({
           prompt,
           systemContext,
           sessionId: session.sessionId,
+          conversationId: conversationIdRef.current,
           agentName: currentAgent.name,
           history: historyRef.current,
         });
 
         for await (const ev of gen) {
-          if (ev.type === "token") {
+          if (ev.type === "conversation") {
+            conversationIdRef.current = ev.conversationId;
+            patchSessionConversationId(session.sessionId, ev.conversationId);
+          } else if (ev.type === "token") {
             pendingTokensRef.current += ev.text;
             scheduleTokenFlush();
           } else if (ev.type === "tool") {
@@ -1387,7 +1407,6 @@ export function Repl({
           clearToolRuns(turnElapsed);
         }
         setStreaming(false);
-        setToolRuns([]);
         setStatusText(null);
       }
     },
@@ -1524,86 +1543,18 @@ export function Repl({
         .replace(/:80$/, "")
     : null;
 
-  const activeToolRuns = toolRuns.filter((r) => !r.completedAt);
   const markdownWidth = getMarkdownLayoutWidth("assistant", terminalCols);
   const terminalWidth = terminalCols;
 
-  const streamingActivityRuns = useMemo((): ToolActivityRun[] => {
-    const pending = activeToolRuns.map((r) => ({ name: r.name, detail: r.detail }));
-    return [...turnToolRunsRef.current, ...pending];
-  }, [activeToolRuns, streamElapsed]);
-
-  const renderInkBody = (text: string, diff?: boolean) =>
-    diff ?? isDiffBlock(text) ? (
-      <InkDiffBlock text={text} width={markdownWidth} />
-    ) : (
-      <AssistantBody text={text} width={markdownWidth} />
-    );
-
   return (
     <Box flexDirection="column" height="100%">
-      {/* ALL visible text lives here — rendered once per item, never redrawn */}
-      <Static key={`${generation}-${terminalCols}`} items={staticItems}>
-        {(item) => {
-          switch (item.kind) {
-            case "user":
-              return <UserMessageBar key={item._key} text={item.text} width={terminalWidth} />;
-            case "recap":
-              return <RecapLine key={item._key} text={item.text} />;
-            case "assistant":
-              return (
-                <Box key={item._key} paddingX={1} marginBottom={1} flexDirection="column">
-                  <Text color="blue">{"⏺ "}</Text>
-                  <Box paddingLeft={2} flexDirection="column">
-                    {renderInkBody(item.text)}
-                  </Box>
-                </Box>
-              );
-            case "assistant-plain":
-              return (
-                <Box key={item._key} paddingX={1} marginBottom={1} flexDirection="row">
-                  <Text color="blue">{"⏺ "}</Text>
-                  <Text wrap="wrap">{item.text}</Text>
-                </Box>
-              );
-            case "assistant-segment":
-              return (
-                <Box key={item._key} paddingX={1} flexDirection="row">
-                  <Text color="blue">{item.lead ? "⏺ " : "  "}</Text>
-                  {renderInkBody(item.text, item.diff)}
-                </Box>
-              );
-            case "chunk":
-              return item.text ? (
-                <Text key={item._key}>{item.text}</Text>
-              ) : (
-                <Box key={item._key} paddingX={1}>
-                  <Text color="blue">{"⏺ "}</Text>
-                </Box>
-              );
-            case "tool-activity":
-              return (
-                <ToolActivityPanel
-                  key={item._key}
-                  phase="done"
-                  runs={item.runs}
-                  elapsed={item.elapsed}
-                />
-              );
-            case "tool":
-              return (
-                <Box key={item._key} paddingX={1} marginLeft={2}>
-                  <Text color="green">
-                    {"✓ "}
-                    {item.name}
-                  </Text>
-                </Box>
-              );
-          }
-        }}
-      </Static>
+      <StaticHistory
+        generation={generation}
+        items={staticItems}
+        markdownWidth={markdownWidth}
+        terminalWidth={terminalWidth}
+      />
 
-      {/* Dynamic area: wait indicator while streaming (markdown renders in Static when done) */}
       <Box flexDirection="column" paddingY={0}>
         {localShellRun ? (
           <ToolActivityPanel
@@ -1612,22 +1563,14 @@ export function Repl({
             elapsed={localShellElapsed}
           />
         ) : null}
-        {streaming ? (
-          <Box paddingX={1} marginBottom={1} flexDirection="column">
-            {streamingActivityRuns.length > 0 ? (
-              <ToolActivityPanel
-                phase="running"
-                runs={streamingActivityRuns}
-                elapsed={streamElapsed}
-              />
-            ) : null}
-            <StreamWaitLine
-              elapsed={streamElapsed}
-              label={streamPhase === "thinking" ? "Musing" : "Warping"}
-              tokenCount={streamTokenCount}
-            />
-          </Box>
-        ) : null}
+        <StreamingStatusPanel
+          active={streaming}
+          liveToolsRef={liveToolsRef}
+          turnToolRunsRef={turnToolRunsRef}
+          streamStartRef={streamStartRef}
+          streamTokenRef={streamTokenRef}
+          streamPhaseRef={streamPhaseRef}
+        />
         {staticItems.length === 0 && !streaming && !localShellRun && (
           <Box paddingX={1}>
             <Text dimColor>
@@ -1684,10 +1627,7 @@ export function Repl({
       <Box paddingX={2} justifyContent="space-between">
         <Box flexDirection="column">
           {streaming ? (
-            <Text dimColor>
-              Esc cancel · Ctrl+C stop
-              {streamTokenCount > 0 ? ` · ↓ ${streamTokenCount} tokens` : ""}
-            </Text>
+            <Text dimColor>Esc cancel · Ctrl+C stop</Text>
           ) : statusText !== null ? (
             <Text dimColor>{statusText}</Text>
           ) : (

@@ -128,6 +128,20 @@ configCmd
   });
 
 // ---------------------------------------------------------------------------
+// caipe sessions
+// ---------------------------------------------------------------------------
+const sessionsCmd = program.command("sessions").description("List saved chat sessions");
+
+sessionsCmd
+  .command("list")
+  .description("List sessions saved on exit (use with chat --resume)")
+  .option("--json", "Output JSON array")
+  .action(async (opts: Record<string, unknown>) => {
+    const { runSessionsList } = await import("./chat/sessions-cmd.js");
+    await runSessionsList({ json: opts.json === true });
+  });
+
+// ---------------------------------------------------------------------------
 // caipe skills
 // ---------------------------------------------------------------------------
 const skillsCmd = program

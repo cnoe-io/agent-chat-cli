@@ -146,16 +146,30 @@ export async function runChat(opts: ChatOpts, globalOpts: GlobalOpts): Promise<v
   // Create or resume session
   let session: ChatSession;
   if (opts.resume) {
-    const { loadSession, createSession: makeSession } = await import("./history.js");
+    const { loadSession } = await import("./history.js");
     const existing = loadSession(opts.resume);
-    session = existing ?? makeSession({ agentName, workingDir: cwd });
+    if (!existing) {
+      process.stderr.write(
+        `[WARN] Session ${opts.resume} not found; starting a new session.\n`,
+      );
+      session = createSession({ agentName, workingDir: cwd });
+      session.memoryContext = systemContext;
+    } else {
+      session = existing;
+      session.workingDir = cwd;
+    }
   } else {
     session = createSession({ agentName, workingDir: cwd });
     session.memoryContext = systemContext;
   }
 
   const ep = authEndpoints(serverUrl);
-  const adapter = createAdapter(resolvedAgent, ep.streamStart, getToken);
+  const adapter = createAdapter(resolvedAgent, ep.streamStart, getToken, {
+    conversationIds:
+      session.conversationId != null
+        ? { [session.sessionId]: session.conversationId }
+        : undefined,
+  });
 
   // Mount REPL
   return new Promise<void>((resolve) => {

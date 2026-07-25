@@ -94,7 +94,8 @@ export type StreamEvent =
   | ToolArgsEvent
   | ToolEndEvent
   | ToolResultEvent
-  | StateEvent;
+  | StateEvent
+  | ConversationEvent;
 
 // ---------------------------------------------------------------------------
 // StreamAdapter interface
@@ -104,8 +105,15 @@ export interface SendPayload {
   prompt: string;
   systemContext?: string;
   sessionId: string;
+  /** Restored from session file on resume; skips creating a new BFF conversation. */
+  conversationId?: string;
   agentName: string;
   history?: Array<{ role: "user" | "assistant"; content: string }>;
+}
+
+export interface ConversationEvent {
+  type: "conversation";
+  conversationId: string;
 }
 
 export interface StreamAdapter {
@@ -149,6 +157,11 @@ function shouldTryNextClientType(status: number, bodyText: string): boolean {
  * Events: AG-UI SSE — RUN_STARTED, TEXT_MESSAGE_CONTENT, TOOL_CALL_START,
  *         TOOL_CALL_END, RUN_FINISHED, RUN_ERROR, CUSTOM
  */
+export interface AdapterOptions {
+  /** Pre-seed sessionId → BFF conversation _id (from saved session on resume). */
+  conversationIds?: Record<string, string>;
+}
+
 export class AguiAdapter implements StreamAdapter {
   // Maps local sessionId → server-assigned conversation _id
   private readonly conversationIds = new Map<string, string>();
@@ -158,7 +171,14 @@ export class AguiAdapter implements StreamAdapter {
     /** Full URL of the stream endpoint (e.g. http://localhost:3000/api/v1/chat/stream/start) */
     private readonly streamEndpoint: string,
     private readonly getAccessToken: () => Promise<string>,
-  ) {}
+    options?: AdapterOptions,
+  ) {
+    if (options?.conversationIds) {
+      for (const [sessionId, id] of Object.entries(options.conversationIds)) {
+        this.conversationIds.set(sessionId, id);
+      }
+    }
+  }
 
   /**
    * Ensure the conversation exists in the BFF before streaming.
@@ -168,7 +188,12 @@ export class AguiAdapter implements StreamAdapter {
     sessionId: string,
     agentId: string,
     token: string,
+    persistedId?: string,
   ): Promise<string> {
+    if (persistedId) {
+      this.conversationIds.set(sessionId, persistedId);
+      return persistedId;
+    }
     const cached = this.conversationIds.get(sessionId);
     if (cached) return cached;
 
@@ -229,11 +254,18 @@ export class AguiAdapter implements StreamAdapter {
 
     let conversationId: string;
     try {
-      conversationId = await this.ensureConversation(payload.sessionId, agentId, token);
+      conversationId = await this.ensureConversation(
+        payload.sessionId,
+        agentId,
+        token,
+        payload.conversationId,
+      );
     } catch (err) {
       yield { type: "error", message: err instanceof Error ? err.message : String(err) };
       return;
     }
+
+    yield { type: "conversation", conversationId };
 
     const userText = payload.prompt.trim();
     const { loadTokens } = await import("../auth/keychain.js");
@@ -424,6 +456,7 @@ export function createAdapter(
   agent: Agent,
   streamEndpoint: string,
   getAccessToken: () => Promise<string>,
+  options?: AdapterOptions,
 ): StreamAdapter {
-  return new AguiAdapter(agent, streamEndpoint, getAccessToken);
+  return new AguiAdapter(agent, streamEndpoint, getAccessToken, options);
 }

@@ -132,6 +132,7 @@ export function StreamingSpinner({
 }
 
 import { formatToolTreeLabel } from "./terminal/tool-label.js";
+import { animatedWaitEnabled } from "./terminal/repl-ui.js";
 
 const SHELL_TOOL_NAMES = new Set([
   "bash",
@@ -192,6 +193,12 @@ export interface ToolActivityPanelProps {
   phase: "running" | "done";
   runs: ToolActivityRun[];
   elapsed: number;
+  /** Completed earlier in this turn (live footer only). */
+  completedEarlier?: number;
+  /** Hide tree rows beyond maxTreeRows (0 = summary only). */
+  maxTreeRows?: number;
+  /** Tools omitted from `runs` (shown as "N earlier…"). */
+  omittedCount?: number;
 }
 
 function shellSummaryLabel(count: number, shellCount: number): string {
@@ -208,13 +215,16 @@ export function ToolActivityPanel({
   phase,
   runs,
   elapsed,
+  completedEarlier = 0,
+  maxTreeRows = Number.POSITIVE_INFINITY,
+  omittedCount = 0,
 }: ToolActivityPanelProps): React.ReactElement {
   const { useState, useEffect } = React;
   const frames = NO_COLOR ? SPINNER_PLAIN : CAIPE_SPINNER_FRAMES;
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
-    if (phase !== "running") return;
+    if (phase !== "running" || !animatedWaitEnabled()) return;
     const id = setInterval(() => setFrame((f) => (f + 1) % frames.length), 250);
     return () => clearInterval(id);
   }, [phase, frames.length]);
@@ -223,14 +233,26 @@ export function ToolActivityPanel({
   const noun = shellSummaryLabel(runs.length, shellCount);
   const summary =
     phase === "running"
-      ? `Running ${runs.length} ${noun}…`
-      : `Ran ${runs.length} ${noun} · ${elapsed}s`;
+      ? runs.length === 0 && completedEarlier > 0
+        ? `Running… (${completedEarlier} done)`
+        : completedEarlier > 0
+          ? `Running ${runs.length} ${noun}… (${completedEarlier} done)`
+          : `Running ${runs.length} ${noun}…`
+      : omittedCount > 0
+        ? `Ran ${runs.length + omittedCount} ${noun} · ${elapsed}s`
+        : `Ran ${runs.length} ${noun} · ${elapsed}s`;
+
+  const treeCap =
+    maxTreeRows === Number.POSITIVE_INFINITY ? runs.length : Math.max(0, maxTreeRows);
+  const treeRuns = treeCap >= runs.length ? runs : runs.slice(-treeCap);
 
   return (
     <Box flexDirection="column" marginBottom={1}>
       <Box paddingX={1}>
-        {phase === "running" ? (
+        {phase === "running" && animatedWaitEnabled() ? (
           <Text color={NO_COLOR ? undefined : "yellow"}>{frames[frame]} </Text>
+        ) : phase === "running" ? (
+          <Text color={NO_COLOR ? undefined : "yellow"}>● </Text>
         ) : (
           <Text dimColor>● </Text>
         )}
@@ -238,8 +260,13 @@ export function ToolActivityPanel({
           {summary}
         </Text>
       </Box>
-      {runs.map((run, idx) => {
-        const isLast = idx === runs.length - 1;
+      {omittedCount > 0 ? (
+        <Box paddingX={1} marginLeft={2}>
+          <Text dimColor>… {omittedCount} earlier {omittedCount === 1 ? "tool" : "tools"}</Text>
+        </Box>
+      ) : null}
+      {treeRuns.map((run, idx) => {
+        const isLast = idx === treeRuns.length - 1;
         const branch = isLast ? "└" : "├";
         const label = formatToolTreeLabel(run.name, run.detail);
         const isUpdate = label.startsWith("Update(");
@@ -301,6 +328,7 @@ export function StreamWaitLine({
   const [frame, setFrame] = useState(0);
 
   useEffect(() => {
+    if (!animatedWaitEnabled()) return;
     const id = setInterval(() => setFrame((f) => (f + 1) % frames.length), 80);
     return () => clearInterval(id);
   }, [frames.length]);
@@ -311,7 +339,11 @@ export function StreamWaitLine({
   return (
     <Box>
       <Text color={NO_COLOR ? undefined : "magenta"}>* </Text>
-      <Text color={NO_COLOR ? undefined : "magenta"}>{frames[frame]} </Text>
+      {animatedWaitEnabled() ? (
+        <Text color={NO_COLOR ? undefined : "magenta"}>{frames[frame]} </Text>
+      ) : (
+        <Text color={NO_COLOR ? undefined : "magenta"}>● </Text>
+      )}
       <Text>{label}… </Text>
       <Text dimColor>
         ({elapsed}s{tokenSuffix})

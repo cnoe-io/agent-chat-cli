@@ -24,6 +24,8 @@ export interface Message {
 
 export interface ChatSession {
   sessionId: string;
+  /** BFF conversation _id — restores server-side thread on `--resume`. */
+  conversationId?: string;
   agentName: string;
   agentEndpoint: string;
   protocol: "agui";
@@ -89,6 +91,14 @@ export function saveSession(session: ChatSession): void {
   const path = join(dir, `${session.sessionId}.json`);
   const trimmed = applyRollingWindow(session);
   writeFileSync(path, `${JSON.stringify(trimmed, null, 2)}\n`, "utf8");
+}
+
+/** Persist server conversation id without rewriting message history (e.g. after first stream). */
+export function patchSessionConversationId(sessionId: string, conversationId: string): void {
+  const existing = loadSession(sessionId);
+  if (!existing) return;
+  if (existing.conversationId === conversationId) return;
+  saveSession({ ...existing, conversationId });
 }
 
 /**

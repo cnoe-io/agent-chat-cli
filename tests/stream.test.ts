@@ -19,6 +19,7 @@ const PAYLOAD: SendPayload = {
   prompt: "hello",
   systemContext: "",
   sessionId: "test-session",
+  conversationId: "bff-conv-existing",
   agentName: "default",
   history: [],
 };
@@ -209,6 +210,31 @@ describe("AguiAdapter", () => {
       const errEv = events.find((e) => e.type === "error");
       expect(errEv).toBeDefined();
       expect((errEv as { message: string }).message).toContain("Agent execution failed");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
+  it("emits conversation event without POST when conversationId is set", async () => {
+    let fetchCalls = 0;
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn((url) => {
+      fetchCalls++;
+      expect(String(url)).toContain("stream/start");
+      return Promise.resolve(new Response("error", { status: 503 }));
+    }) as unknown as typeof fetch;
+
+    try {
+      const adapter = new AguiAdapter(DEFAULT_AGENT, SERVER_URL, getToken);
+      const events = [];
+      for await (const ev of adapter.connect(PAYLOAD)) {
+        events.push(ev);
+      }
+      expect(fetchCalls).toBe(1);
+      expect(events[0]).toEqual({
+        type: "conversation",
+        conversationId: "bff-conv-existing",
+      });
     } finally {
       global.fetch = originalFetch;
     }
