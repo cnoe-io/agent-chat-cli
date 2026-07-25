@@ -122,6 +122,16 @@ describe("buildMemoryContext", () => {
 
 // ── buildSystemContext ────────────────────────────────────────────────────────
 
+describe("formatClientDateContext", () => {
+  it("includes local date and timezone", async () => {
+    const { formatClientDateContext } = await import("../src/chat/context");
+    const block = formatClientDateContext(new Date("2026-07-24T15:00:00.000Z"));
+    expect(block).toContain("<client-context>");
+    expect(block).toContain("2026-07-24");
+    expect(block).toMatch(/Timezone:/);
+  });
+});
+
 describe("buildSystemContext", () => {
   it("returns only memory context when noContext=true", async () => {
     const configDir = join(testDir, "caipe");
@@ -130,6 +140,7 @@ describe("buildSystemContext", () => {
 
     const { buildSystemContext } = await import("../src/chat/context");
     const ctx = await buildSystemContext(testDir, true);
+    expect(ctx).toContain("<client-context>");
     expect(ctx).toContain("Memory content.");
     expect(ctx).not.toContain("<repository>");
   });

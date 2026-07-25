@@ -8,12 +8,17 @@
 
 import { createTwoFilesPatch } from "diff";
 
-const NO_COLOR = Boolean(process.env.NO_COLOR);
-
-const GREEN = NO_COLOR ? "" : "\x1b[32m";
-const RED = NO_COLOR ? "" : "\x1b[31m";
-const GREY = NO_COLOR ? "" : "\x1b[90m";
-const RESET = NO_COLOR ? "" : "\x1b[0m";
+function diffColors(): { green: string; red: string; grey: string; reset: string } {
+  if (process.env.NO_COLOR) {
+    return { green: "", red: "", grey: "", reset: "" };
+  }
+  return {
+    green: "\x1b[32m",
+    red: "\x1b[31m",
+    grey: "\x1b[90m",
+    reset: "\x1b[0m",
+  };
+}
 
 /**
  * Render a colored unified diff between `oldText` and `newText`.
@@ -31,18 +36,56 @@ export function renderDiff(oldText: string, newText: string, label: string): str
   );
 
   const lines = patch.split("\n");
+  const { green, red, grey, reset } = diffColors();
   const colored = lines.map((line) => {
     if (line.startsWith("+") && !line.startsWith("+++")) {
-      return `${GREEN}${line}${RESET}`;
+      return `${green}${line}${reset}`;
     }
     if (line.startsWith("-") && !line.startsWith("---")) {
-      return `${RED}${line}${RESET}`;
+      return `${red}${line}${reset}`;
     }
     if (line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++")) {
-      return `${GREY}${line}${RESET}`;
+      return `${grey}${line}${reset}`;
     }
     return line;
   });
 
   return colored.join("\n");
+}
+
+/** Heuristic: unified diff hunk (---/+++/@@ or many +/- lines). */
+export function isUnifiedDiffText(text: string): boolean {
+  const lines = text.split("\n");
+  const hasHeader =
+    lines.some((l) => l.startsWith("--- ")) && lines.some((l) => l.startsWith("+++ "));
+  const hasHunk = lines.some((l) => l.startsWith("@@"));
+  if (hasHeader || (hasHunk && lines.some((l) => l.startsWith("+") || l.startsWith("-")))) {
+    return true;
+  }
+  const changeLines = lines.filter(
+    (l) =>
+      (l.startsWith("+") && !l.startsWith("+++")) || (l.startsWith("-") && !l.startsWith("---")),
+  );
+  return changeLines.length >= 6 && lines.some((l) => l.startsWith("@@"));
+}
+
+/** Color +/- and hunk headers in diff text already present in the stream. */
+export function colorizeUnifiedDiffText(text: string): string {
+  if (process.env.NO_COLOR) return text;
+  const { green, red, grey, reset } = diffColors();
+  const lines = text.split("\n");
+  return lines
+    .map((line) => {
+      if (line.startsWith("+") && !line.startsWith("+++")) {
+        return `${green}${line}${reset}`;
+      }
+      if (line.startsWith("-") && !line.startsWith("---")) {
+        return `${red}${line}${reset}`;
+      }
+      if (line.startsWith("@@") || line.startsWith("---") || line.startsWith("+++")) {
+        return `${grey}${line}${reset}`;
+      }
+      return line;
+    })
+    .join("\n");
 }

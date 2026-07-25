@@ -6,7 +6,12 @@
  */
 
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
-import { agentsCachePath, authEndpoints, globalConfigDir } from "../platform/config.js";
+import {
+  agentsCachePath,
+  authEndpoints,
+  getConfiguredDefaultAgent,
+  globalConfigDir,
+} from "../platform/config.js";
 import type { Agent } from "./types.js";
 
 const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
@@ -97,17 +102,16 @@ export function isAutoAgentName(name: string | undefined): boolean {
 }
 
 /**
- * Resolve which dynamic agent to use for chat.
+ * Pick an agent from a fetched list (pure — used by resolveSessionAgent and tests).
  *
- * - Explicit id/name → must exist in accessible-agents
- * - `default` / omitted → first available agent (then any agent)
+ * Priority when auto:
+ *   configured default (settings / CAIPE_DEFAULT_AGENT) → first available → any
  */
-export async function resolveSessionAgent(
-  serverUrl: string,
-  getToken: () => Promise<string>,
+export function pickSessionAgent(
+  agents: Agent[],
   requestedName?: string,
-): Promise<Agent> {
-  const agents = await fetchAgents(serverUrl, getToken);
+  configuredDefault?: string,
+): Agent {
   if (agents.length === 0) {
     throw new Error(
       "No agents returned for your account. Ask an admin to grant agent#use on a dynamic agent, then run `caipe agents list`.",
@@ -123,11 +127,34 @@ export async function resolveSessionAgent(
     );
   }
 
+  if (configuredDefault) {
+    const preferred = getAgent(agents, configuredDefault);
+    if (preferred) {
+      return preferred;
+    }
+    process.stderr.write(
+      `[WARNING] Configured default agent "${configuredDefault}" is not accessible. ` +
+        "Run `caipe agents list` or `caipe config unset agent.default`. Falling back to first agent.\n",
+    );
+  }
+
   const pick = agents.find((a) => a.available) ?? agents[0];
-  process.stderr.write(
-    `[INFO] Using agent "${pick.name}" (${pick.displayName}). Pass --agent <id> to choose another.\n`,
-  );
   return pick;
+}
+
+/**
+ * Resolve which dynamic agent to use for chat.
+ *
+ * - Explicit id/name → must exist in accessible-agents
+ * - `default` / omitted → agent.default / CAIPE_DEFAULT_AGENT, else first available
+ */
+export async function resolveSessionAgent(
+  serverUrl: string,
+  getToken: () => Promise<string>,
+  requestedName?: string,
+): Promise<Agent> {
+  const agents = await fetchAgents(serverUrl, getToken);
+  return pickSessionAgent(agents, requestedName, getConfiguredDefaultAgent());
 }
 
 /**

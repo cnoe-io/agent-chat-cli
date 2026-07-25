@@ -135,6 +135,50 @@ describe("AguiAdapter", () => {
     }
   });
 
+  it("maps TOOL_CALL_END and TOOL_CALL_RESULT", async () => {
+    const mockBody = new ReadableStream({
+      start(controller) {
+        controller.enqueue(
+          new TextEncoder().encode(
+            sseFrame("RUN_STARTED", { runId: "r1" }) +
+              sseFrame("TOOL_CALL_START", { toolCallId: "tc1", toolCallName: "write_file" }) +
+              sseFrame("TOOL_CALL_ARGS", { toolCallId: "tc1", delta: "{\"path\":\"a.ts\"}" }) +
+              sseFrame("TOOL_CALL_END", { toolCallId: "tc1" }) +
+              sseFrame("TOOL_CALL_RESULT", {
+                messageId: "m1",
+                toolCallId: "tc1",
+                content: "{\"status\":\"ok\"}",
+              }) +
+              sseFrame("RUN_FINISHED", { runId: "r1", outcome: "success" }),
+          ),
+        );
+        controller.close();
+      },
+    });
+
+    const originalFetch = global.fetch;
+    global.fetch = vi.fn(() =>
+      Promise.resolve(
+        new Response(mockBody, { status: 200, headers: { "Content-Type": "text/event-stream" } }),
+      ),
+    ) as unknown as typeof fetch;
+
+    try {
+      const adapter = new AguiAdapter(DEFAULT_AGENT, SERVER_URL, getToken);
+      const events = [];
+      for await (const ev of adapter.connect(PAYLOAD)) {
+        events.push(ev);
+      }
+
+      expect(events.some((e) => e.type === "tool-end")).toBe(true);
+      const result = events.find((e) => e.type === "tool-result");
+      expect(result).toBeDefined();
+      expect((result as { content: string }).content).toContain("ok");
+    } finally {
+      global.fetch = originalFetch;
+    }
+  });
+
   it("maps RUN_ERROR to error events and stops stream", async () => {
     const mockBody = new ReadableStream({
       start(controller) {

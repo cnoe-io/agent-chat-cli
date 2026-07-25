@@ -40,6 +40,10 @@ export interface Settings {
     /** true once the user has completed or explicitly skipped the setup wizard */
     completed?: boolean;
   };
+  agent?: {
+    /** Default dynamic agent id when --agent is omitted or `default` (CAIPE_DEFAULT_AGENT overrides) */
+    default?: string;
+  };
 }
 
 export class ServerNotConfigured extends Error {
@@ -155,6 +159,7 @@ export function readSettings(): Settings {
       server: { ...DEFAULT_SETTINGS.server, ...saved.server },
       auth: { ...DEFAULT_SETTINGS.auth, ...saved.auth },
       setup: saved.setup,
+      agent: saved.agent,
     };
   } catch {
     return { ...DEFAULT_SETTINGS };
@@ -247,6 +252,18 @@ export function getIdpHint(): string | undefined {
   const env = process.env.CAIPE_IDP_HINT;
   if (env && env.trim() !== "") return env.trim();
   return readSettings().auth?.idpHint;
+}
+
+/**
+ * Configured default agent id for auto-picked chat sessions.
+ * Priority: CAIPE_DEFAULT_AGENT → settings.agent.default
+ */
+export function getConfiguredDefaultAgent(): string | undefined {
+  const env = process.env.CAIPE_DEFAULT_AGENT;
+  if (env && env.trim() !== "") return env.trim();
+  const fromSettings = readSettings().agent?.default;
+  if (fromSettings && fromSettings.trim() !== "") return fromSettings.trim();
+  return undefined;
 }
 
 /** Endpoints derived from the caipe-ui (auth) URL. */

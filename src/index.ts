@@ -20,7 +20,7 @@ program
   .version(pkg.version, "-v, --version", "Print version and exit")
   .option(
     "--agent <name>",
-    "Dynamic agent id from `caipe agents list` (default: first agent you can use)",
+    "Dynamic agent id from `caipe agents list` (default: agent.default setting, else first accessible)",
     "default",
   )
   .option("--url <url>", "Override server.url from settings.json for this invocation only")

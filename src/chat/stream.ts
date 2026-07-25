@@ -2,7 +2,10 @@
  * AG-UI streaming adapter for dynamic agents.
  *
  * Calls POST <authUrl>/api/v1/chat/stream/start with body:
- *   { message, conversation_id, agent_id, protocol: "agui" }
+ *   { message, conversation_id, agent_id, protocol: "agui", context? }
+ *
+ * Each user turn prepends a `<client-context>` date block so agents resolve
+ * "this week" / "today" without relying on model cutoff.
  *
  * Receives AG-UI SSE events and maps them to common StreamEvents consumed
  * by the REPL and headless runner.
@@ -10,6 +13,7 @@
 // assisted-by claude code claude-sonnet-4-6
 
 import type { Agent } from "../agents/types.js";
+import { clientUserFromTokenSet, formatClientContextBlock } from "./context.js";
 
 // ---------------------------------------------------------------------------
 // Common event types
@@ -53,8 +57,26 @@ export interface InterruptedEvent {
 export interface ToolEvent {
   type: "tool";
   name: string;
+  toolCallId?: string;
   input?: unknown;
   output?: unknown;
+}
+
+export interface ToolArgsEvent {
+  type: "tool-args";
+  toolCallId: string;
+  delta: string;
+}
+
+export interface ToolEndEvent {
+  type: "tool-end";
+  toolCallId: string;
+}
+
+export interface ToolResultEvent {
+  type: "tool-result";
+  toolCallId: string;
+  content: string;
 }
 
 export interface StateEvent {
@@ -69,6 +91,9 @@ export type StreamEvent =
   | ErrorEvent
   | InterruptedEvent
   | ToolEvent
+  | ToolArgsEvent
+  | ToolEndEvent
+  | ToolResultEvent
   | StateEvent;
 
 // ---------------------------------------------------------------------------
@@ -210,12 +235,23 @@ export class AguiAdapter implements StreamAdapter {
       return;
     }
 
-    const body = JSON.stringify({
-      message: payload.prompt,
+    const userText = payload.prompt.trim();
+    const { loadTokens } = await import("../auth/keychain.js");
+    const sessionUser = clientUserFromTokenSet(await loadTokens());
+    const withClock = userText.includes("<client-context>")
+      ? userText
+      : `${formatClientContextBlock({ user: sessionUser })}\n\n${userText}`;
+
+    const bodyObj: Record<string, unknown> = {
+      message: withClock,
       conversation_id: conversationId,
       agent_id: agentId,
       protocol: "agui",
-    });
+    };
+    const ctx = payload.systemContext?.trim();
+    if (ctx) bodyObj.context = ctx;
+
+    const body = JSON.stringify(bodyObj);
 
     const res = await fetch(this.streamEndpoint, {
       method: "POST",
@@ -315,14 +351,28 @@ export class AguiAdapter implements StreamAdapter {
         return {
           type: "tool",
           name: (parsed.toolCallName as string) ?? "unknown",
+          toolCallId: (parsed.toolCallId as string) ?? undefined,
         };
 
-      case "TOOL_CALL_ARGS":
-      case "TOOL_CALL_RESULT":
-        return null;
+      case "TOOL_CALL_ARGS": {
+        const toolCallId = (parsed.toolCallId as string) ?? "";
+        const delta = (parsed.delta as string) ?? "";
+        if (!toolCallId || !delta) return null;
+        return { type: "tool-args", toolCallId, delta };
+      }
 
-      case "TOOL_CALL_END":
-        return null;
+      case "TOOL_CALL_END": {
+        const toolCallId = (parsed.toolCallId as string) ?? "";
+        if (!toolCallId) return null;
+        return { type: "tool-end", toolCallId };
+      }
+
+      case "TOOL_CALL_RESULT": {
+        const toolCallId = (parsed.toolCallId as string) ?? "";
+        const content = (parsed.content as string) ?? "";
+        if (!toolCallId || !content) return null;
+        return { type: "tool-result", toolCallId, content };
+      }
 
       case "RUN_FINISHED": {
         const outcome = parsed.outcome as string | undefined;

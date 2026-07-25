@@ -81,6 +81,12 @@ describe("settings read/write", () => {
     expect(s.auth?.apiKey).toBe("secret");
   });
 
+  it("round-trips agent.default", () => {
+    writeSettings({ agent: { default: "agent-sre" } });
+    const s = readSettings();
+    expect(s.agent?.default).toBe("agent-sre");
+  });
+
   it("handles corrupted settings file gracefully", () => {
     const { writeFileSync, mkdirSync } = require("node:fs") as typeof import("fs");
     mkdirSync(require("node:path").dirname(settingsJsonPath()), { recursive: true });

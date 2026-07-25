@@ -14,8 +14,59 @@
 
 import { buildMemoryContext, loadMemoryFiles } from "../memory/loader.js";
 import { findRepoRoot, recentLog, sampleFileTree } from "../platform/git.js";
+import type { TokenSet } from "../auth/keychain.js";
 
 const MAX_CONTEXT_CHARS = 400_000; // ~100k tokens
+
+export interface ClientUserContext {
+  email?: string;
+  name?: string;
+  sub?: string;
+}
+
+export function clientUserFromTokenSet(tokens: TokenSet | null | undefined): ClientUserContext {
+  if (!tokens) return {};
+  const email =
+    tokens.email ?? (tokens.identity?.includes("@") ? tokens.identity : undefined);
+  const sub = tokens.identity && !tokens.identity.includes("@") ? tokens.identity : undefined;
+  return {
+    email,
+    name: tokens.displayName,
+    sub,
+  };
+}
+
+/** Date + signed-in user for the agent (prepended to each turn). */
+export function formatClientContextBlock(
+  options: { now?: Date; user?: ClientUserContext } = {},
+): string {
+  const now = options.now ?? new Date();
+  const tz = Intl.DateTimeFormat().resolvedOptions().timeZone;
+  const local = now.toLocaleDateString("en-US", {
+    timeZone: tz,
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const user = options.user ?? {};
+  const lines = [
+    "<client-context>",
+    `Current local date: ${local}`,
+    `Timezone: ${tz}`,
+    `ISO-8601: ${now.toISOString()}`,
+  ];
+  if (user.email) lines.push(`User email: ${user.email}`);
+  if (user.name) lines.push(`User name: ${user.name}`);
+  if (user.sub) lines.push(`User id: ${user.sub}`);
+  lines.push("</client-context>");
+  return lines.join("\n");
+}
+
+/** @deprecated Use {@link formatClientContextBlock} */
+export function formatClientDateContext(now = new Date()): string {
+  return formatClientContextBlock({ now });
+}
 
 export interface ContextExtras {
   serverUrl?: string;
@@ -34,9 +85,13 @@ export async function buildSystemContext(
 ): Promise<string> {
   const memoryFiles = loadMemoryFiles(cwd);
   const memoryContext = buildMemoryContext(memoryFiles);
+  const { loadTokens } = await import("../auth/keychain.js");
+  const clock = formatClientContextBlock({
+    user: clientUserFromTokenSet(await loadTokens()),
+  });
 
   if (noContext) {
-    return memoryContext;
+    return [clock, memoryContext].filter(Boolean).join("\n\n");
   }
 
   // Fetch agents + skills in parallel with git context — all best-effort
@@ -56,7 +111,7 @@ export async function buildSystemContext(
     gitSection = `<repository>\n<root>${repoRoot}</root>\n<file-tree>\n${tree}\n</file-tree>\n<recent-commits>\n${log}\n</recent-commits>\n</repository>`;
   }
 
-  const parts = [memoryContext, agentsSection, skillsSection, gitSection].filter(Boolean);
+  const parts = [clock, memoryContext, agentsSection, skillsSection, gitSection].filter(Boolean);
   let combined = parts.join("\n\n");
 
   if (combined.length > MAX_CONTEXT_CHARS) {

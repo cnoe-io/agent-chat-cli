@@ -20,7 +20,8 @@ type SupportedKey =
   | "server.url"
   | "auth.apiKey"
   | "auth.credential-storage"
-  | "auth.idp-hint";
+  | "auth.idp-hint"
+  | "agent.default";
 
 const SUPPORTED_KEYS: SupportedKey[] = [
   "auth.url",
@@ -28,6 +29,7 @@ const SUPPORTED_KEYS: SupportedKey[] = [
   "auth.apiKey",
   "auth.credential-storage",
   "auth.idp-hint",
+  "agent.default",
 ];
 
 const CREDENTIAL_STORAGE_VALUES = ["encrypted-file", "keychain"] as const;
@@ -120,6 +122,19 @@ export async function runConfigSet(key: string, value: string): Promise<void> {
     process.stdout.write(`Set auth.idp-hint = ${value.trim()}\n`);
     return;
   }
+
+  if (key === "agent.default") {
+    const id = value.trim();
+    if (!id) {
+      process.stderr.write("[ERROR] agent.default must be a non-empty agent id.\n");
+      process.exit(3);
+    }
+    const settings = readSettings();
+    settings.agent = { ...settings.agent, default: id };
+    writeSettings(settings);
+    process.stdout.write(`Set agent.default = ${id}\n`);
+    return;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -161,6 +176,14 @@ export async function runConfigGet(key: string, opts: { json?: boolean }): Promi
       source = "CAIPE_IDP_HINT env var";
     } else {
       value = settings.auth?.idpHint;
+    }
+  } else if (key === "agent.default") {
+    const envVal = process.env.CAIPE_DEFAULT_AGENT;
+    if (envVal) {
+      value = envVal;
+      source = "CAIPE_DEFAULT_AGENT env var";
+    } else {
+      value = settings.agent?.default;
     }
   }
 
@@ -205,6 +228,8 @@ export async function runConfigUnset(key: string): Promise<void> {
     settings.auth.credentialStorage = undefined;
   } else if (key === "auth.idp-hint" && settings.auth) {
     settings.auth.idpHint = undefined;
+  } else if (key === "agent.default" && settings.agent) {
+    settings.agent.default = undefined;
   }
 
   writeSettings(settings);

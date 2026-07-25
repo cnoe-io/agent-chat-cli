@@ -21,7 +21,9 @@ caipe agents list
 caipe chat --agent '<id-from-agents-list>'
 ```
 
-Type messages at the `❯` prompt. **`/`** for commands, **`Ctrl+D`** to exit.
+Type messages at the `❯` prompt. **`/`** for commands, **`Ctrl+O`** to pick an agent, **`Ctrl+D`** to exit.
+
+Prompt line editing is implemented in-tree (`src/chat/line-edit.ts`, Apache-2.0): common bash/emacs keys (Ctrl+A/E/K/U/W/Y, Alt+b/f/d, Ctrl+R history search, etc.). It does **not** use GNU Readline or other GPL line-editing libraries.
 
 Other host (UI serves OAuth on the same URL): set only `server.url`, then `caipe auth login` and `caipe chat`.
 
@@ -138,6 +140,7 @@ When the UI exposes OAuth and `/.well-known/agent.json` on the same host:
 caipe config set server.url https://your-caipe.example.com
 caipe auth login
 caipe agents list
+caipe config set agent.default agent-sre   # id from agents list; optional
 caipe chat
 ```
 
@@ -168,7 +171,13 @@ caipe config set auth.idp-hint duo-sso
 |----------|---------|
 | `CAIPE_SERVER_URL` | BFF base URL (agents, chat stream) |
 | `CAIPE_AUTH_URL` | OAuth / discovery base (login) |
+| `CAIPE_DEFAULT_AGENT` | Default dynamic agent id (overrides `agent.default` in settings) |
 | `CAIPE_AUTH_REALM` | Keycloak realm name for IdP heuristics (default `caipe`) |
+| `CAIPE_PLAIN_TERMINAL` | Set to `1` to disable rich markdown, alt screen, and inline images |
+| `CAIPE_NO_ALT_SCREEN` | Set to `1` to keep chat in the normal scrollback buffer |
+| `CAIPE_NO_INLINE_IMAGES` | Set to `1` to disable iTerm2 inline image rendering |
+| `CAIPE_STREAM_BUFFER_MS` | Token flush interval while streaming (default `50`) |
+| `CAIPE_STREAM_PLAIN` | Set to `1` for legacy plain-text chunk streaming (no live markdown colors) |
 | `CAIPE_IDP_HINT` | Keycloak `kc_idp_hint` |
 | `CAIPE_TOKEN` | Bearer token (headless / CI) |
 | `CAIPE_API_KEY` | API key where supported |
@@ -234,7 +243,10 @@ caipe auth logout
 |-----|-------------|
 | `server.url` | CAIPE UI / BFF HTTPS base URL |
 | `auth.url` | OAuth and discovery base (Keycloak realm URL or UI URL) |
+| `agent.default` | Default dynamic agent id for `caipe chat` when `--agent` is omitted |
 | `auth.idp-hint` | Skip Keycloak login chooser (`kc_idp_hint`) |
+
+**Rich terminal output (interactive chat):** Markdown is rendered with **react-markdown** + **remark-gfm** as native Ink components (no ANSI markdown strings). Diffs use Ink colors. Block streaming caches completed sections in `<Static>`; the active tail updates in place. Tool runs show in the footer. Chat uses the **alternate screen** unless `CAIPE_NO_ALT_SCREEN=1` or `CAIPE_PLAIN_TERMINAL=1`. Legacy plain streaming: `CAIPE_STREAM_PLAIN=1`.
 | `auth.apiKey` | Static API key (headless alternative) |
 | `auth.credential-storage` | `encrypted-file` (default) or `keychain` |
 

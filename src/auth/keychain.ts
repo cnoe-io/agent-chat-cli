@@ -31,6 +31,8 @@ export interface TokenSet {
   accessTokenExpiry?: string;
   identity?: string;
   displayName?: string;
+  /** OIDC email claim when present (preferred for agent context). */
+  email?: string;
 }
 
 // ---------------------------------------------------------------------------

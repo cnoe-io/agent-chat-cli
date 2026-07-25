@@ -4,7 +4,7 @@
 
 import { render } from "ink";
 import React from "react";
-import { renderMarkdown } from "../platform/markdown.js";
+import { plainTextFromMarkdown } from "../platform/markdown.js";
 import { SkillsBrowser } from "./Browser.js";
 import { fetchCatalog } from "./catalog.js";
 import { installSkill } from "./install.js";
@@ -80,7 +80,7 @@ export async function runSkillsPreview(name: string): Promise<void> {
   }
 
   const content = await res.text();
-  process.stdout.write(renderMarkdown(content));
+  process.stdout.write(`${plainTextFromMarkdown(content)}\n`);
 }
 
 // ---------------------------------------------------------------------------

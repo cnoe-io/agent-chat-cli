@@ -4,7 +4,6 @@
  * Handles both interactive (Ink REPL) and headless (no TTY) modes.
  * All streaming uses AG-UI via /api/v1/chat/stream/start on the caipe-ui BFF.
  */
-// assisted-by claude code claude-sonnet-4-6
 
 import { render } from "ink";
 import React from "react";
@@ -18,7 +17,13 @@ import {
   getServerUrl,
 } from "../platform/config.js";
 import { printLogo } from "../platform/display.js";
+import { getTerminalCapabilities } from "../platform/markdown.js";
 import { runSetupWizard } from "../platform/setup.js";
+import {
+  enterAlternateScreen,
+  installAlternateScreenCleanup,
+  leaveAlternateScreen,
+} from "../platform/terminal/screen.js";
 import { checkForUpdate, printUpdateBanner } from "../platform/updater.js";
 import { Repl } from "./Repl.js";
 import { buildSystemContext } from "./context.js";
@@ -100,6 +105,12 @@ export async function runChat(opts: ChatOpts, globalOpts: GlobalOpts): Promise<v
   }
 
   // Print logo, then show update banner if one is available
+  const termCaps = getTerminalCapabilities();
+  if (termCaps.alternateScreen) {
+    installAlternateScreenCleanup();
+    enterAlternateScreen();
+  }
+
   printLogo(_version);
   const latestVersion = await updateCheckPromise;
   if (latestVersion) printUpdateBanner(_version, latestVersion);
@@ -160,6 +171,7 @@ export async function runChat(opts: ChatOpts, globalOpts: GlobalOpts): Promise<v
         onExit: (finalSession: ChatSession) => {
           saveSession(finalSession);
           unmount();
+          leaveAlternateScreen();
           resolve();
         },
       }),

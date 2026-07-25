@@ -16,6 +16,7 @@ import { type IncomingMessage, type ServerResponse, createServer } from "node:ht
 import { promisify } from "node:util";
 import { getIdpHint, getServerUrl } from "../platform/config.js";
 import { discoverOAuthAgentConfig, resolveOAuthEndpoints } from "../platform/discovery.js";
+import { mergeOidcClaims, oidcClaimsFromJwt } from "./claims.js";
 import { type TokenSet, storeTokens } from "./keychain.js";
 
 const execFileAsync = promisify(execFile);
@@ -475,24 +476,28 @@ function parseTokenResponse(body: Record<string, unknown>): TokenSet {
   const expiresIn = typeof body.expires_in === "number" ? body.expires_in : 3600;
   const accessTokenExpiry = new Date(Date.now() + expiresIn * 1000).toISOString();
 
-  // Optional OIDC claims
+  // Optional OIDC claims from id_token (and access_token when it carries email)
   const idToken = body.id_token;
-  let identity: string | undefined;
-  let displayName: string | undefined;
+  let claims = mergeOidcClaims();
   if (typeof idToken === "string") {
-    try {
-      // Decode JWT payload (base64url, no verification — server already validated)
-      const payload = JSON.parse(
-        Buffer.from(idToken.split(".")[1] ?? "", "base64url").toString(),
-      ) as Record<string, unknown>;
-      identity = String(payload.sub ?? payload.email ?? "");
-      displayName = String(payload.name ?? payload.preferred_username ?? "");
-    } catch {
-      // ignore
-    }
+    claims = mergeOidcClaims(claims, oidcClaimsFromJwt(idToken));
+  }
+  if (typeof accessToken === "string" && !claims.email) {
+    claims = mergeOidcClaims(claims, oidcClaimsFromJwt(accessToken));
   }
 
-  return { accessToken, refreshToken, accessTokenExpiry, identity, displayName };
+  const identity = claims.sub ?? claims.email;
+  const displayName = claims.name ?? claims.preferredUsername;
+  const email = claims.email;
+
+  return {
+    accessToken,
+    refreshToken,
+    accessTokenExpiry,
+    identity,
+    displayName,
+    email,
+  };
 }
 
 async function readLine(): Promise<string> {

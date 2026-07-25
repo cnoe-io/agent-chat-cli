@@ -9,6 +9,7 @@
  */
 
 import { authEndpoints } from "../platform/config.js";
+import { mergeOidcClaims, oidcClaimsFromJwt } from "./claims.js";
 import { type TokenSet, loadTokens, storeTokens } from "./keychain.js";
 
 /** Thrown when no valid token can be produced and interactive re-auth is needed. */
@@ -42,7 +43,7 @@ export async function getValidToken(authUrl: string): Promise<string> {
     throw new AuthRequired("Session expired. Run `caipe auth login` to re-authenticate.");
   }
 
-  const refreshed = await refreshAccessToken(tokens.refreshToken, authUrl);
+  const refreshed = await refreshAccessToken(tokens.refreshToken, authUrl, tokens);
   await storeTokens(refreshed);
   return refreshed.accessToken;
 }
@@ -50,7 +51,11 @@ export async function getValidToken(authUrl: string): Promise<string> {
 /**
  * Exchange a refresh token for a new TokenSet via the token endpoint.
  */
-export async function refreshAccessToken(refreshToken: string, authUrl: string): Promise<TokenSet> {
+export async function refreshAccessToken(
+  refreshToken: string,
+  authUrl: string,
+  prior?: TokenSet,
+): Promise<TokenSet> {
   const ep = authEndpoints(authUrl);
 
   const res = await fetch(ep.token, {
@@ -74,10 +79,29 @@ export async function refreshAccessToken(refreshToken: string, authUrl: string):
   const expiresIn = typeof body.expires_in === "number" ? body.expires_in : 3600;
   const accessTokenExpiry = new Date(Date.now() + expiresIn * 1000).toISOString();
 
+  let claims = mergeOidcClaims();
+  if (typeof body.id_token === "string") {
+    claims = mergeOidcClaims(claims, oidcClaimsFromJwt(body.id_token));
+  }
+  claims = mergeOidcClaims(claims, oidcClaimsFromJwt(accessToken));
+  if (prior?.email || prior?.identity || prior?.displayName) {
+    claims = mergeOidcClaims(claims, {
+      email: prior.email,
+      sub: prior.identity?.includes("@") ? undefined : prior.identity,
+      name: prior.displayName,
+    });
+    if (!claims.email && prior.identity?.includes("@")) {
+      claims.email = prior.identity;
+    }
+  }
+
   return {
     accessToken,
     refreshToken: newRefreshToken,
     accessTokenExpiry,
+    identity: claims.sub ?? claims.email ?? prior?.identity,
+    displayName: claims.name ?? claims.preferredUsername ?? prior?.displayName,
+    email: claims.email ?? prior?.email,
   };
 }
 

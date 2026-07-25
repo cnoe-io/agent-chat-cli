@@ -153,10 +153,8 @@ async function readStdinAll(): Promise<string> {
 }
 
 async function* stdinLines(): AsyncIterable<string> {
-  const rl = (await import("node:readline")).createInterface({ input: process.stdin });
-  for await (const line of rl) {
-    yield line;
-  }
+  const { readStdinLines } = await import("../platform/stdin-lines.js");
+  yield* readStdinLines();
 }
 
 function emitError(message: string): void {
