@@ -39,7 +39,7 @@ jobs:
       - name: Lint (Biome)
         run: bun run lint
 
-      - name: Run unit tests (vitest)
+      - name: Run tests (unit + e2e)
         run: bun run test
 
       - name: Build (verify compilation succeeds)

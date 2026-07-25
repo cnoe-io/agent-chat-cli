@@ -41,9 +41,9 @@ describe("terminal capabilities", () => {
     Object.defineProperty(process.stdout, "isTTY", { value: true, configurable: true });
     Object.defineProperty(process.stdout, "columns", { value: 120, configurable: true });
     try {
-      expect(getMarkdownLayoutWidth("full")).toBe(118);
-      expect(getMarkdownLayoutWidth("assistant")).toBe(115);
-      expect(getMarkdownLayoutWidth("user")).toBe(116);
+      expect(getMarkdownLayoutWidth("full", 120)).toBe(115);
+      expect(getMarkdownLayoutWidth("assistant", 120)).toBe(113);
+      expect(getMarkdownLayoutWidth("user", 120)).toBe(113);
     } finally {
       if (tty) Object.defineProperty(process.stdout, "isTTY", tty);
     }

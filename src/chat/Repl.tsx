@@ -10,7 +10,7 @@
  *   - Assistant markdown: marked-terminal ANSI (one shot after each turn).
  */
 
-import { Box, Static, Text, useApp, useInput } from "ink";
+import { Box, Static, Text, useApp, useInput, useStdout } from "ink";
 import React, { useState, useEffect, useCallback, useRef, useMemo } from "react";
 
 import { fetchAgents, getAgent } from "../agents/registry.js";
@@ -32,7 +32,6 @@ import {
   getTerminalWidth,
   AssistantBody,
   InkDiffBlock,
-  refreshMarkdownTerminalWidth,
 } from "../platform/markdown.js";
 import { fetchSupervisorSkills } from "../skills/catalog.js";
 import type { ChatSession } from "./history.js";
@@ -554,13 +553,39 @@ export function Repl({
   onExit,
 }: ReplProps): React.ReactElement {
   const { exit } = useApp();
+  const { stdout } = useStdout();
+
+  /** Live TTY width (SIGWINCH → stdout.resize); drives markdown/table layout. */
+  const [terminalCols, setTerminalCols] = useState(() => {
+    const c = stdout.columns;
+    return typeof c === "number" && c >= 20 ? c : getTerminalWidth();
+  });
+
+  useEffect(() => {
+    let debounce: ReturnType<typeof setTimeout> | undefined;
+    const sync = () => {
+      const c = stdout.columns;
+      if (typeof c !== "number" || c < 20) return;
+      setTerminalCols((prev) => (prev === c ? prev : c));
+    };
+    const onResize = () => {
+      if (debounce) clearTimeout(debounce);
+      debounce = setTimeout(sync, 120);
+    };
+    sync();
+    stdout.on("resize", onResize);
+    return () => {
+      if (debounce) clearTimeout(debounce);
+      stdout.off("resize", onResize);
+    };
+  }, [stdout]);
 
   // ── Static items: the ONLY thing that appears on screen ──
   const [staticItems, setStaticItems] = useState<StaticItem[]>([]);
   const staticKeyRef = useRef(0);
   const nextKey = () => staticKeyRef.current++;
 
-  // Generation counter — remount Static after /clear only.
+  // Generation counter — remount Static after /clear; terminalCols also remounts on SIGWINCH.
   const [generation, setGeneration] = useState(0);
 
   // ── History: for sending context to the agent ──
@@ -886,18 +911,6 @@ export function Repl({
     }, 250);
     return () => clearInterval(id);
   }, [localShellRun]);
-
-  // Reflow markdown width hint when terminal is resized (completed Static items keep layout until new turns).
-  useEffect(() => {
-    if (!process.stdout.isTTY || streamPlainTextEnabled()) return;
-    const onResize = () => {
-      refreshMarkdownTerminalWidth();
-    };
-    process.stdout.on("resize", onResize);
-    return () => {
-      process.stdout.off("resize", onResize);
-    };
-  }, []);
 
   // ── Exit ──
   const handleExit = useCallback(() => {
@@ -1512,8 +1525,8 @@ export function Repl({
     : null;
 
   const activeToolRuns = toolRuns.filter((r) => !r.completedAt);
-  const markdownWidth = getMarkdownLayoutWidth("assistant");
-  const terminalWidth = getTerminalWidth();
+  const markdownWidth = getMarkdownLayoutWidth("assistant", terminalCols);
+  const terminalWidth = terminalCols;
 
   const streamingActivityRuns = useMemo((): ToolActivityRun[] => {
     const pending = activeToolRuns.map((r) => ({ name: r.name, detail: r.detail }));
@@ -1530,7 +1543,7 @@ export function Repl({
   return (
     <Box flexDirection="column" height="100%">
       {/* ALL visible text lives here — rendered once per item, never redrawn */}
-      <Static key={generation} items={staticItems}>
+      <Static key={`${generation}-${terminalCols}`} items={staticItems}>
         {(item) => {
           switch (item.kind) {
             case "user":

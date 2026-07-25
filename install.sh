@@ -138,22 +138,50 @@ download_binary() {
 # ── install ───────────────────────────────────────────────────────────────────
 
 install_binary() {
-  DEST="${INSTALL_DIR}/caipe"
+  SHARE="${CAIPE_SHARE_DIR:-${HOME}/.local/share/caipe}"
+  mkdir -p "$SHARE"
+  BIN_IN_SHARE="${SHARE}/${BINARY_NAME}"
+  install -m 755 "${DOWNLOADED_BINARY}" "${BIN_IN_SHARE}"
+  ok "Installed binary to ${BIN_IN_SHARE}"
 
-  # Check if install dir is writable; offer sudo if not
+  DEST="${INSTALL_DIR}/caipe"
+  LAUNCHER="${TMP_DIR}/caipe-launcher"
+
+  # Node launcher on PATH — never install the Mach-O binary as ~/.local/bin/caipe (SIGKILL on some Macs).
+  cat > "${LAUNCHER}" << 'LAUNCHER_EOF'
+#!/usr/bin/env node
+"use strict";
+const { spawnSync } = require("node:child_process");
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+const args = process.argv.slice(2);
+const share = process.env.CAIPE_SHARE_DIR || path.join(os.homedir(), ".local/share/caipe");
+const plat = process.platform === "darwin" ? "darwin" : "linux";
+const arch = process.arch === "arm64" ? "arm64" : "x64";
+const bin = path.join(share, "caipe-" + plat + "-" + arch);
+if (!fs.existsSync(bin)) {
+  process.stderr.write("[caipe] Missing " + bin + ". Re-run install.sh.\n");
+  process.exit(1);
+}
+const r = spawnSync(bin, args, { stdio: "inherit" });
+process.exit(r.status ?? (r.signal ? 128 : 1));
+LAUNCHER_EOF
+  chmod +x "${LAUNCHER}"
+
   if [ ! -w "$INSTALL_DIR" ]; then
     info "Installing to ${INSTALL_DIR} requires elevated privileges…"
     if command -v sudo >/dev/null 2>&1; then
-      sudo install -m 755 "${DOWNLOADED_BINARY}" "${DEST}"
+      sudo install -m 755 "${LAUNCHER}" "${DEST}"
     else
       die "Cannot write to ${INSTALL_DIR} and sudo is unavailable. " \
           "Set CAIPE_INSTALL_DIR to a writable directory (e.g. ~/.local/bin)."
     fi
   else
-    install -m 755 "${DOWNLOADED_BINARY}" "${DEST}"
+    install -m 755 "${LAUNCHER}" "${DEST}"
   fi
 
-  ok "Installed caipe to ${DEST}"
+  ok "Installed caipe launcher to ${DEST}"
 }
 
 # ── verify installation ───────────────────────────────────────────────────────

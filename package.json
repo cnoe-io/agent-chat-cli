@@ -25,10 +25,13 @@
     "compile": "bun build src/index.ts --compile --target=bun-darwin-arm64 --outfile=dist/caipe --external keytar && codesign --remove-signature dist/caipe && codesign --sign - --force --entitlements entitlements.plist dist/caipe",
     "dev": "tsx src/index.ts",
     "test": "vitest run",
+    "test:unit": "vitest run --exclude tests/cli.e2e.test.ts",
+    "test:e2e": "vitest run tests/cli.e2e.test.ts",
     "test:watch": "vitest",
     "lint": "biome check src/ tests/",
     "lint:fix": "biome check --write src/ tests/",
-    "format": "biome format --write src/ tests/"
+    "format": "biome format --write src/ tests/",
+    "link:path": "sh scripts/link-path.sh"
   },
   "dependencies": {
     "@ag-ui/client": "0.0.52",

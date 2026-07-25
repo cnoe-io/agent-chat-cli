@@ -1,6 +1,9 @@
 #!/usr/bin/env node
 /**
- * npm/npx entrypoint: prefer published platform binary, else local compile, else tsx.
+ * npm/npx entrypoint: platform binary or Node bundle (reliable), with compile/tsx fallbacks.
+ *
+ * Do not copy dist/caipe into PATH directly — some environments SIGKILL Bun binaries
+ * (e.g. under ~/.local/bin). Use this wrapper or `npm link` from the repo.
  */
 "use strict";
 
@@ -10,6 +13,7 @@ const path = require("node:path");
 
 const root = path.join(__dirname, "..");
 const args = process.argv.slice(2);
+const preferCompiled = process.env.CAIPE_USE_COMPILED === "1";
 
 const PLATFORM_PACKAGES = [
   { os: "darwin", cpu: "arm64", pkg: "caipe-darwin-arm64" },
@@ -23,15 +27,13 @@ function die(msg) {
   process.exit(1);
 }
 
-function run(bin, binArgs) {
-  const r = spawnSync(bin, binArgs, { stdio: "inherit" });
-  if (r.error) {
-    die(r.error.message);
-  }
-  process.exit(r.status ?? 1);
-}
+/** @typedef {{ kind: "exec", bin: string, binArgs: string[] } | { kind: "node", script: string, extraArgs?: string[] }} LaunchSpec */
 
-function tryPlatformBinary() {
+/** @returns {LaunchSpec[]} */
+function launchChain() {
+  /** @type {LaunchSpec[]} */
+  const chain = [];
+
   const os = process.platform;
   const cpu = process.arch;
   for (const entry of PLATFORM_PACKAGES) {
@@ -43,62 +45,74 @@ function tryPlatformBinary() {
       continue;
     }
     if (fs.existsSync(binPath)) {
-      return binPath;
+      chain.push({ kind: "exec", bin: binPath, binArgs: args });
+      break;
     }
   }
-  return null;
-}
 
-function tryLocalBinary() {
-  const local = path.join(root, "dist", "caipe");
-  if (fs.existsSync(local)) {
-    return local;
+  const bundleCjs = path.join(root, "dist", "bundle.cjs");
+  if (fs.existsSync(bundleCjs)) {
+    chain.push({ kind: "node", script: bundleCjs, extraArgs: args });
   }
-  return null;
-}
 
-function tryBundle() {
-  const bundle = path.join(root, "dist", "bundle.cjs");
-  if (fs.existsSync(bundle)) {
-    return { node: process.execPath, script: bundle };
-  }
-  return null;
-}
-
-function tryTsx() {
   let tsxCli;
   try {
     tsxCli = require.resolve("tsx/dist/cli.mjs");
   } catch {
-    return null;
+    tsxCli = null;
   }
   const entry = path.join(root, "src", "index.ts");
-  if (!fs.existsSync(entry)) {
-    return null;
+  if (tsxCli && fs.existsSync(entry)) {
+    chain.unshift({ kind: "node", script: tsxCli, extraArgs: [entry, ...args] });
   }
-  return { node: process.execPath, script: tsxCli, entry };
+
+  const local = path.join(root, "dist", "caipe");
+  if (fs.existsSync(local)) {
+    chain.push({ kind: "exec", bin: local, binArgs: args });
+  }
+
+  if (preferCompiled && chain.length > 1) {
+    const compiled = chain.find((s) => s.kind === "exec");
+    const rest = chain.filter((s) => s !== compiled);
+    return compiled ? [compiled, ...rest] : chain;
+  }
+
+  // Default: tsx/node first, then compiled binary (Bun compile can be SIGKILL'd in some PATH layouts).
+  const execs = chain.filter((s) => s.kind === "exec");
+  const nodes = chain.filter((s) => s.kind === "node");
+  return [...nodes, ...execs];
 }
 
-const platformBin = tryPlatformBinary();
-if (platformBin) {
-  run(platformBin, args);
+function spawnSpec(spec) {
+  if (spec.kind === "exec") {
+    return spawnSync(spec.bin, spec.binArgs, { stdio: "inherit" });
+  }
+  const nodeArgs = [spec.script];
+  if (spec.extraArgs?.length) nodeArgs.push(...spec.extraArgs);
+  return spawnSync(process.execPath, nodeArgs, { stdio: "inherit" });
 }
 
-const localBin = tryLocalBinary();
-if (localBin) {
-  run(localBin, args);
+function wasSigKill(result) {
+  return result.signal === "SIGKILL" || result.status === 137;
 }
 
-const bundle = tryBundle();
-if (bundle) {
-  run(bundle.node, [bundle.script, ...args]);
+function runChain(chain) {
+  for (let i = 0; i < chain.length; i++) {
+    const r = spawnSpec(chain[i]);
+    if (r.error) {
+      die(r.error.message);
+    }
+    if (wasSigKill(r) && i + 1 < chain.length) {
+      process.stderr.write(
+        "[caipe] Compiled binary was killed (signal 9); retrying with Node…\n",
+      );
+      continue;
+    }
+    process.exit(r.status ?? (r.signal ? 128 : 1));
+  }
+  die(
+    "Could not start caipe. Run from the repo: npm run build && npm link, or install via install.sh. Avoid copying dist/caipe into PATH — use bin/caipe.cjs.",
+  );
 }
 
-const tsx = tryTsx();
-if (tsx) {
-  run(tsx.node, [tsx.script, tsx.entry, ...args]);
-}
-
-die(
-  "Could not start caipe. Install a release binary (curl install.sh), run setup-caipe-cli.sh, or build with: bun install && npm run compile",
-);
+runChain(launchChain());

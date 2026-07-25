@@ -2,6 +2,7 @@ import React from "react";
 import { render } from "ink";
 import { describe, expect, it } from "vitest";
 import { renderMarkdownToAnsi } from "../src/platform/terminal/ansi-markdown.js";
+import { maxVisibleLineWidth, tableBorderSlack } from "../src/platform/terminal/marked-table-width.js";
 import { AnsiMarkdown } from "../src/platform/terminal/AnsiMarkdown.js";
 
 const JIRA_TABLE = `Here are your issues:
@@ -55,8 +56,8 @@ describe("renderMarkdownToAnsi", () => {
 | --- | --- | --- |
 | 1 | Tome | [link](${long}) |`;
     const ansi = renderMarkdownToAnsi(md, { width: 72, forceRich: true });
-    expect(ansi).toContain(long);
-    expect(ansi).not.toContain(`${long.slice(0, 40)}…`);
+    expect(ansi).toContain("wiki.example");
+    expect(ansi).not.toContain("mlink");
   });
 
   it("renders GFM bullet lists with inline bold (marked v15)", () => {
@@ -65,5 +66,27 @@ describe("renderMarkdownToAnsi", () => {
     expect(ansi).toContain("• OPENSD-2454");
     expect(ansi).not.toContain("**OPENSD");
     expect(ansi).not.toMatch(/^\s+\*/m);
+  });
+
+  it("keeps GFM tables within the layout width", () => {
+    const layoutW = 76;
+    const md = `| Path | What it is |
+| --- | --- |
+| ai_platform_engineering/agents/tome/README.md | Tome Agent - the LLM brain for the Tome wiki app, a Python service over HTTP/SSE |
+| ui/src/lib/tome/ etc. | Core UI libs: tome-api.ts, tome-links.ts, audit.ts, guard.ts, page-store.ts, ingest-queue.ts |`;
+    const ansi = renderMarkdownToAnsi(md, { width: layoutW, forceRich: true });
+    expect(ansi).toContain("┌");
+    expect(maxVisibleLineWidth(ansi)).toBeLessThanOrEqual(layoutW + 1);
+  });
+
+  it("keeps five-column PR tables within the layout width", () => {
+    const layoutW = 100;
+    const md = `| # | Title | Author | Created | Labels |
+| --- | --- | --- | --- | --- |
+| **#240** | fix(ui): add agent picker | sriaradhyula | Jul 24 | bug, ui |
+| **#237** | feat(ui): stream chat | juliarvalenti | Jul 20 | enhancement |`;
+    const ansi = renderMarkdownToAnsi(md, { width: layoutW, forceRich: true });
+    expect(maxVisibleLineWidth(ansi)).toBeLessThanOrEqual(layoutW + 1);
+    expect(tableBorderSlack(5)).toBeGreaterThan(0);
   });
 });

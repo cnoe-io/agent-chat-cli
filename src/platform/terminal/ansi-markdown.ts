@@ -9,6 +9,7 @@ import { markedTerminal } from "marked-terminal";
 
 import { getTerminalCapabilities, getTerminalWidth, isRichTerminalEnabled } from "./capabilities.js";
 import { markedListInlineExtension } from "./marked-list-fix.js";
+import { markedTableWidthExtension } from "./marked-table-width.js";
 import { plainTextFromMarkdown } from "./plain-markdown.js";
 
 export interface RenderMarkdownToAnsiOptions {
@@ -80,19 +81,21 @@ function shortenUrlForDisplay(url: string, maxLen: number): string {
 }
 
 function createMarked(width: number): Marked {
+  const contentWidth = Math.max(20, width);
   const instance = new Marked({ gfm: true, breaks: false });
   instance.use(
     markedTerminal({
-      width,
+      width: contentWidth,
       reflowText: true,
       showSectionPrefix: false,
       tableOptions: {
         wordWrap: true,
-        wrapOnWordBoundary: false,
+        wrapOnWordBoundary: true,
       },
     }),
   );
   instance.use(markedListInlineExtension());
+  instance.use(markedTableWidthExtension(contentWidth));
   return instance;
 }
 

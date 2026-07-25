@@ -38,8 +38,15 @@ export function isRichTerminalEnabled(): boolean {
 }
 
 export function getTerminalWidth(fallback = 80): number {
-  const cols = process.stdout.columns;
-  if (typeof cols === "number" && cols >= 20) return cols;
+  const fromEnv = process.env.CAIPE_COLUMNS ?? process.env.COLUMNS;
+  if (fromEnv) {
+    const n = Number.parseInt(fromEnv, 10);
+    if (Number.isFinite(n) && n >= 20) return n;
+  }
+  for (const stream of [process.stdout, process.stderr]) {
+    const cols = stream.columns;
+    if (typeof cols === "number" && cols >= 20) return cols;
+  }
   return fallback;
 }
 
@@ -50,14 +57,19 @@ export type MarkdownLayoutVariant = "assistant" | "user" | "full";
  * Column width for markdown / tables inside the REPL.
  * Must match the Ink box that hosts {@link AnsiBlock} or tables spill and ANSI breaks.
  */
-export function getMarkdownLayoutWidth(variant: MarkdownLayoutVariant = "assistant"): number {
-  const cols = getTerminalWidth();
+export function getMarkdownLayoutWidth(
+  variant: MarkdownLayoutVariant = "assistant",
+  columns?: number,
+): number {
+  const cols = columns ?? getTerminalWidth();
   let inset = 2; // paddingX={1} on message rows
   if (variant === "assistant") {
-    inset += 2; // body indent under ⏺ (column layout)
+    inset += 2; // paddingLeft={2} under ⏺
   } else if (variant === "user") {
     inset += 2; // "❯ " prefix
   }
+  inset += 2; // cli-table3 borders / rounding slack
+  inset += 1; // Ink margin / off-by-one vs stdout.columns
   return Math.max(20, cols - inset);
 }
 

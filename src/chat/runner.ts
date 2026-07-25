@@ -30,14 +30,12 @@ import { buildSystemContext } from "./context.js";
 import { createSession, saveSession } from "./history.js";
 import type { ChatSession } from "./history.js";
 import { createAdapter } from "./stream.js";
+import { createRequire } from "node:module";
 
-// Read version lazily
+const requirePkg = createRequire(import.meta.url);
 let _version = "0.1.0";
 try {
-  const { createRequire } = await import("node:module");
-  const _req = createRequire(import.meta.url);
-  const pkg = _req("../../package.json") as { version: string };
-  _version = pkg.version;
+  _version = (requirePkg("../../package.json") as { version: string }).version;
 } catch {
   /* ignore */
 }
