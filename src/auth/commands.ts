@@ -24,7 +24,14 @@ interface GlobalOpts {
 // ---------------------------------------------------------------------------
 
 export async function runLogin(
-  opts: { manual?: boolean; device?: boolean; force?: boolean; setupWizard?: boolean },
+  opts: {
+    manual?: boolean;
+    device?: boolean;
+    force?: boolean;
+    setupWizard?: boolean;
+    isolated?: boolean;
+    systemBrowser?: boolean;
+  },
   globalOpts: GlobalOpts,
 ): Promise<void> {
   // Resolve auth (caipe-ui/OAuth) URL
@@ -72,7 +79,10 @@ export async function runLogin(
   } else if (opts.manual) {
     await loginManual(authUrl, clientId);
   } else {
-    await loginBrowser(authUrl, clientId);
+    let browser: "isolated" | "system" | undefined;
+    if (opts.systemBrowser) browser = "system";
+    else if (opts.isolated) browser = "isolated";
+    await loginBrowser(authUrl, clientId, { browser });
   }
 
   const tokens = await loadTokens();

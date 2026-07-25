@@ -46,6 +46,17 @@ export interface SessionSummary {
   messageCount: number;
 }
 
+/** Filter saved sessions for the `/resume` picker (id or agent name). */
+export function filterSessions(sessions: SessionSummary[], query: string): SessionSummary[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return sessions;
+  return sessions.filter(
+    (s) =>
+      s.sessionId.toLowerCase().includes(q) ||
+      s.agentName.toLowerCase().includes(q),
+  );
+}
+
 // Rolling window limit (~100k tokens @ 4 chars/token)
 const MAX_CONTEXT_CHARS = 400_000;
 
@@ -148,6 +159,31 @@ export function listSessions(): SessionSummary[] {
   return summaries.sort(
     (a, b) => new Date(b.startedAt).getTime() - new Date(a.startedAt).getTime(),
   );
+}
+
+/** Match full session UUID or unique prefix (for `/resume abc123`). */
+export function resolveSessionIdByArg(
+  arg: string,
+): { ok: true; sessionId: string } | { ok: false; message: string } {
+  const trimmed = arg.trim();
+  if (!trimmed) {
+    return { ok: false, message: "Usage: /resume <sessionId>  (or /resume to list saved sessions)" };
+  }
+  const all = listSessions();
+  const exact = all.find((s) => s.sessionId === trimmed);
+  if (exact) return { ok: true, sessionId: exact.sessionId };
+
+  const prefixMatches = all.filter((s) => s.sessionId.startsWith(trimmed));
+  if (prefixMatches.length === 1) {
+    return { ok: true, sessionId: prefixMatches[0]!.sessionId };
+  }
+  if (prefixMatches.length > 1) {
+    return {
+      ok: false,
+      message: `Ambiguous session prefix "${trimmed}" (${prefixMatches.length} matches). Use a longer id.`,
+    };
+  }
+  return { ok: false, message: `No saved session matching "${trimmed}". Run /resume to list.` };
 }
 
 // ---------------------------------------------------------------------------

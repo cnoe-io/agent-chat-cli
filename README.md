@@ -230,10 +230,14 @@ caipe chat --headless --token "$JWT" --prompt "health check"
 ```bash
 caipe auth status
 caipe auth login --force
+caipe auth login              # PKCE in isolated Chrome/Chromium (default)
+caipe auth login --system-browser   # use default browser profile (can affect Web UI)
 caipe auth login --device      # device code flow
 caipe auth login --manual      # paste authorization code
 caipe auth logout
 ```
+
+**OAuth browser:** By default the CLI opens Chrome/Chromium with a **temporary profile** so logging in does not overwrite cookies for an open caipe-ui tab. Set `CAIPE_CHROMIUM_PATH` if Chrome is non-standard. `CAIPE_AUTH_BROWSER=system` restores the old behavior. `CAIPE_AUTH_HEADLESS=1` uses headless mode (often breaks MFA).
 
 ---
 

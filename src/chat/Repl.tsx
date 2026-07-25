@@ -30,10 +30,19 @@ import { type ToolActivityRun, ToolActivityPanel } from "../platform/display.js"
 import { maxStaticToolTreeRows } from "../platform/terminal/repl-ui.js";
 import { getMarkdownLayoutWidth, getTerminalWidth } from "../platform/markdown.js";
 import { StaticHistory } from "./StaticHistory.js";
+import { SessionPicker } from "./SessionPicker.js";
 import { StreamingStatusPanel, type LiveToolRefEntry } from "./StreamingStatusPanel.js";
 import { fetchSupervisorSkills } from "../skills/catalog.js";
 import type { ChatSession } from "./history.js";
-import { patchSessionConversationId } from "./history.js";
+import {
+  filterSessions,
+  listSessions,
+  loadSession,
+  patchSessionConversationId,
+  resolveSessionIdByArg,
+  saveSession,
+  type SessionSummary,
+} from "./history.js";
 import { streamPlainTextEnabled } from "./markdown-stream.js";
 import { ShellApprovalPrompt } from "./ShellApprovalPrompt.js";
 import { isShellHitlEnabled, type ShellApprovalRequest } from "./shell-hitl.js";
@@ -133,6 +142,7 @@ const SLASH_COMMANDS: SlashCommand[] = [
   { name: "/exit", description: "End session and save history" },
   { name: "/skills", description: "Show skills loaded in supervisor" },
   { name: "/agents", description: "Switch to a different agent" },
+  { name: "/resume", description: "Pick a saved session (↑↓ Enter)" },
   { name: "/memory", description: "Edit memory file" },
   { name: "/help", description: "Show available commands" },
 ];
@@ -201,7 +211,7 @@ function SlashPicker({ input, selectedIndex, filtered }: SlashPickerProps): Reac
 // InputBar (memoized — props rarely change during streaming)
 // ---------------------------------------------------------------------------
 
-export type PickerNavigation = "none" | "slash" | "agent";
+export type PickerNavigation = "none" | "slash" | "agent" | "session";
 
 interface InputBarProps {
   value: string;
@@ -586,6 +596,7 @@ export function Repl({
   // ── History: for sending context to the agent ──
   const historyRef = useRef<HistoryEntry[]>([]);
   const conversationIdRef = useRef<string | undefined>(session.conversationId);
+  const activeSessionRef = useRef<ChatSession>(session);
   const transcriptHydratedRef = useRef(false);
   const accumulatedRef = useRef(""); // full response text during streaming
 
@@ -605,6 +616,8 @@ export function Repl({
   /** Full agent list while interactive /agents picker is open (filter text = `input`). */
   const [agentPickerCatalog, setAgentPickerCatalog] = useState<Agent[] | null>(null);
   const [agentPickerIndex, setAgentPickerIndex] = useState(0);
+  const [sessionPickerCatalog, setSessionPickerCatalog] = useState<SessionSummary[] | null>(null);
+  const [sessionPickerIndex, setSessionPickerIndex] = useState(0);
   const liveToolsRef = useRef<LiveToolRefEntry[]>([]);
   const [localShellRun, setLocalShellRun] = useState<{ cmd: string; startedAt: number } | null>(
     null,
@@ -682,32 +695,63 @@ export function Repl({
   );
 
   // Restore saved transcript when resuming a session (`caipe chat --resume <id>`).
-  useEffect(() => {
-    if (transcriptHydratedRef.current || session.messages.length === 0) return;
-    transcriptHydratedRef.current = true;
-    for (const msg of session.messages) {
+  const applySessionTranscript = useCallback((loaded: ChatSession) => {
+    const items: StaticItem[] = [];
+    let key = 0;
+    const history: HistoryEntry[] = [];
+    for (const msg of loaded.messages) {
       if (msg.role === "user") {
-        pushStatic({ kind: "user", text: msg.content });
-        historyRef.current.push({ role: "user", content: msg.content });
+        items.push({ kind: "user", text: msg.content, _key: key++ });
+        history.push({ role: "user", content: msg.content });
       } else {
         const { recap, body } = extractRecap(msg.content);
         const displayBody = body.trim() ? body : msg.content;
-        if (recap) pushStatic({ kind: "recap", text: recap });
-        pushStatic({ kind: "assistant", text: displayBody });
-        historyRef.current.push({ role: "assistant", content: msg.content });
+        if (recap) items.push({ kind: "recap", text: recap, _key: key++ });
+        items.push({ kind: "assistant", text: displayBody, _key: key++ });
+        history.push({ role: "assistant", content: msg.content });
       }
     }
+    staticKeyRef.current = key;
+    setStaticItems(items);
+    historyRef.current = history;
     const approxTokens = Math.ceil(
-      session.messages.reduce((n, m) => n + m.content.length, 0) / 4,
+      loaded.messages.reduce((n, m) => n + m.content.length, 0) / 4,
     );
     tokenCountRef.current = approxTokens;
     setTotalTokenDisplay(approxTokens);
+  }, []);
+
+  const persistActiveSession = useCallback(() => {
+    const snap = activeSessionRef.current;
+    if (historyRef.current.length === 0) return;
+    const messages = historyRef.current.map((m) => ({
+      ...m,
+      timestamp: new Date().toISOString(),
+      agentName: currentAgent.name,
+      tokenCount: null,
+    }));
+    saveSession({
+      ...snap,
+      agentName: currentAgent.name,
+      messages,
+      conversationId: conversationIdRef.current,
+    });
+  }, [currentAgent.name]);
+
+  useEffect(() => {
+    if (transcriptHydratedRef.current || session.messages.length === 0) return;
+    transcriptHydratedRef.current = true;
+    applySessionTranscript(session);
     const shortId = session.sessionId.slice(0, 8);
     pushAssistantPlain(
       `Resumed session ${shortId} · ${session.messages.length} message(s)` +
         (session.conversationId ? " · server thread linked" : ""),
     );
-  }, [session.messages, session.sessionId, session.conversationId, pushStatic, pushAssistantPlain]);
+  }, [
+    session,
+    applySessionTranscript,
+    pushAssistantPlain,
+  ]);
 
   const recordCompletedToolRun = useCallback((r: LiveToolRefEntry, completedAt: number) => {
     turnToolRunsRef.current.push({
@@ -888,13 +932,28 @@ export function Repl({
     );
   }, [input]);
 
-  const showPicker = !!input?.startsWith("/") && !streaming && agentPickerCatalog === null;
+  const showPicker =
+    !!input?.startsWith("/") &&
+    !streaming &&
+    agentPickerCatalog === null &&
+    sessionPickerCatalog === null;
 
   const agentPickerActive = agentPickerCatalog !== null && !streaming;
+  const sessionPickerActive = sessionPickerCatalog !== null && !streaming;
   const agentPickerFiltered = useMemo(() => {
     if (!agentPickerCatalog) return [];
     return filterAgents(agentPickerCatalog, input);
   }, [agentPickerCatalog, input]);
+
+  const sessionPickerFiltered = useMemo(() => {
+    if (!sessionPickerCatalog) return [];
+    return filterSessions(sessionPickerCatalog, input);
+  }, [sessionPickerCatalog, input]);
+
+  useEffect(() => {
+    if (!sessionPickerActive) return;
+    setSessionPickerIndex((i) => clampPickerIndex(i, sessionPickerFiltered.length));
+  }, [input, sessionPickerActive, sessionPickerFiltered.length]);
 
   useEffect(() => {
     if (!agentPickerActive) return;
@@ -938,7 +997,7 @@ export function Repl({
     }[] = historyRef.current.map((m) => ({
       ...m,
       timestamp: new Date().toISOString(),
-      agentName: session.agentName,
+      agentName: currentAgent.name,
       tokenCount: null,
     }));
 
@@ -952,9 +1011,14 @@ export function Repl({
       `\n  Session ended · ${turns} turn${turns !== 1 ? "s" : ""} · ~${tokens} tokens · ${duration}\n\n`,
     );
 
-    onExit({ ...session, agentName: currentAgent.name, messages: finishedMessages, conversationId: conversationIdRef.current });
+    onExit({
+      ...activeSessionRef.current,
+      agentName: currentAgent.name,
+      messages: finishedMessages,
+      conversationId: conversationIdRef.current,
+    });
     exit();
-  }, [session, onExit, exit, currentAgent.name]);
+  }, [onExit, exit, currentAgent.name]);
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reset picker on filter count change, not on array identity
   useEffect(() => {
@@ -985,8 +1049,97 @@ export function Repl({
     [serverUrl, pushAssistantPlain],
   );
 
+  const resumeSessionById = useCallback(
+    async (sessionId: string) => {
+      if (streaming) {
+        pushAssistantPlain("Stop the current turn before resuming another session.");
+        return;
+      }
+      if (sessionId === activeSessionRef.current.sessionId) {
+        pushAssistantPlain("Already on this session.");
+        return;
+      }
+      const loaded = loadSession(sessionId);
+      if (!loaded) {
+        pushAssistantPlain(`Session file missing for ${sessionId}.`);
+        return;
+      }
+      setStatusText("Resuming session…");
+      try {
+        persistActiveSession();
+        process.stdout.write("\x1b[2J\x1b[H");
+        setGeneration((g) => g + 1);
+        applySessionTranscript(loaded);
+        activeSessionRef.current = loaded;
+        conversationIdRef.current = loaded.conversationId;
+        transcriptHydratedRef.current = true;
+
+        if (loaded.agentName !== currentAgent.name) {
+          let sv = serverUrl ?? "";
+          try {
+            sv = getServerUrl();
+          } catch {
+            /* keep */
+          }
+          const authUrl2 = (() => {
+            try {
+              return getAuthUrl();
+            } catch {
+              return sv;
+            }
+          })();
+          const agents = await fetchAgents(sv, () => getValidToken(authUrl2));
+          const target = getAgent(agents, loaded.agentName);
+          if (target) {
+            switchToAgent(target);
+            conversationIdRef.current = loaded.conversationId;
+          } else {
+            pushAssistantPlain(
+              `Note: agent "${loaded.agentName}" is not available; staying on ${currentAgent.name}.`,
+            );
+          }
+        }
+
+        const shortId = loaded.sessionId.slice(0, 8);
+        pushAssistantPlain(
+          `Resumed session ${shortId} · ${loaded.messages.length} message(s)` +
+            (loaded.conversationId ? " · server thread linked" : ""),
+        );
+      } catch (err) {
+        pushAssistantPlain(`[ERROR] ${err instanceof Error ? err.message : String(err)}`);
+      } finally {
+        setStatusText(null);
+      }
+    },
+    [
+      streaming,
+      pushAssistantPlain,
+      persistActiveSession,
+      applySessionTranscript,
+      serverUrl,
+      currentAgent.name,
+      switchToAgent,
+    ],
+  );
+
+  const openSessionPicker = useCallback(() => {
+    if (streaming) return;
+    setAgentPickerCatalog(null);
+    const all = listSessions();
+    if (all.length === 0) {
+      pushAssistantPlain(
+        "No saved sessions yet. End with /exit to persist, or run `caipe sessions list`.",
+      );
+      return;
+    }
+    setSessionPickerCatalog(all);
+    setSessionPickerIndex(0);
+    setInput("");
+  }, [streaming, pushAssistantPlain]);
+
   const openAgentPicker = useCallback(async () => {
     if (streaming) return;
+    setSessionPickerCatalog(null);
     setStatusText("Loading agents from registry…");
     try {
       let sv: string;
@@ -1018,6 +1171,7 @@ export function Repl({
   const openSlashPicker = useCallback(() => {
     if (streaming) return;
     setAgentPickerCatalog(null);
+    setSessionPickerCatalog(null);
     setInput(SHORTCUT_SLASH_COMMANDS);
     setPickerIndex(0);
   }, [streaming]);
@@ -1117,6 +1271,25 @@ export function Repl({
             setStatusText(null);
           }
           break;
+
+        case "/resume": {
+          if (streaming) {
+            pushAssistantPlain("Stop the current turn before resuming another session.");
+            break;
+          }
+          const arg = cmd.slice("/resume".length).trim();
+          if (!arg) {
+            openSessionPicker();
+            break;
+          }
+          const resolved = resolveSessionIdByArg(arg);
+          if (!resolved.ok) {
+            pushAssistantPlain(resolved.message);
+            break;
+          }
+          await resumeSessionById(resolved.sessionId);
+          break;
+        }
 
         case "/agents": {
           const arg = cmd.split(" ")[1]?.trim();
@@ -1237,7 +1410,7 @@ export function Repl({
           pushAssistant(`Unknown command: ${cmd}. Type / to see available commands.`);
       }
     },
-    [handleExit, pushAssistant, pushAssistantPlain, streaming, serverUrl, currentAgent, switchToAgent, openAgentPicker],
+    [handleExit, pushAssistant, pushAssistantPlain, streaming, serverUrl, currentAgent, switchToAgent, openAgentPicker, openSessionPicker, resumeSessionById],
   );
 
   // ── Submit: greeting / shell escape / pipe / agent prompt ──
@@ -1319,7 +1492,7 @@ export function Repl({
         const gen = adapterRef.current.connect({
           prompt,
           systemContext,
-          sessionId: session.sessionId,
+          sessionId: activeSessionRef.current.sessionId,
           conversationId: conversationIdRef.current,
           agentName: currentAgent.name,
           history: historyRef.current,
@@ -1328,7 +1501,7 @@ export function Repl({
         for await (const ev of gen) {
           if (ev.type === "conversation") {
             conversationIdRef.current = ev.conversationId;
-            patchSessionConversationId(session.sessionId, ev.conversationId);
+            patchSessionConversationId(activeSessionRef.current.sessionId, ev.conversationId);
           } else if (ev.type === "token") {
             pendingTokensRef.current += ev.text;
             scheduleTokenFlush();
@@ -1436,6 +1609,15 @@ export function Repl({
   // ── Picker navigation ──
   const handlePickerSubmit = useCallback(
     (raw: string) => {
+      if (sessionPickerActive && sessionPickerFiltered.length > 0) {
+        const target = sessionPickerFiltered[sessionPickerIndex];
+        if (target) {
+          setSessionPickerCatalog(null);
+          setInput("");
+          void resumeSessionById(target.sessionId);
+        }
+        return;
+      }
       if (agentPickerActive && agentPickerFiltered.length > 0) {
         const target = agentPickerFiltered[agentPickerIndex];
         if (target) switchToAgent(target);
@@ -1454,28 +1636,56 @@ export function Repl({
       }
       void handleSubmit(raw);
     },
-    [agentPickerActive, agentPickerFiltered, agentPickerIndex, switchToAgent, showPicker, filteredCommands, pickerIndex, executeSlashCommand, handleSubmit],
+    [
+      sessionPickerActive,
+      sessionPickerFiltered,
+      sessionPickerIndex,
+      resumeSessionById,
+      agentPickerActive,
+      agentPickerFiltered,
+      agentPickerIndex,
+      switchToAgent,
+      showPicker,
+      filteredCommands,
+      pickerIndex,
+      executeSlashCommand,
+      handleSubmit,
+    ],
   );
 
   const handleUp = useCallback(() => {
+    if (sessionPickerActive && sessionPickerFiltered.length > 0) {
+      setSessionPickerIndex((i) => movePickerIndex(i, sessionPickerFiltered.length, -1));
+      return;
+    }
     if (agentPickerActive && agentPickerFiltered.length > 0) {
       setAgentPickerIndex((i) => movePickerIndex(i, agentPickerFiltered.length, -1));
       return;
     }
     if (!showPicker || filteredCommands.length === 0) return;
     setPickerIndex((i) => movePickerIndex(i, filteredCommands.length, -1));
-  }, [agentPickerActive, agentPickerFiltered.length, showPicker, filteredCommands.length]);
+  }, [sessionPickerActive, sessionPickerFiltered.length, agentPickerActive, agentPickerFiltered.length, showPicker, filteredCommands.length]);
 
   const handleDown = useCallback(() => {
+    if (sessionPickerActive && sessionPickerFiltered.length > 0) {
+      setSessionPickerIndex((i) => movePickerIndex(i, sessionPickerFiltered.length, 1));
+      return;
+    }
     if (agentPickerActive && agentPickerFiltered.length > 0) {
       setAgentPickerIndex((i) => movePickerIndex(i, agentPickerFiltered.length, 1));
       return;
     }
     if (!showPicker || filteredCommands.length === 0) return;
     setPickerIndex((i) => movePickerIndex(i, filteredCommands.length, 1));
-  }, [agentPickerActive, agentPickerFiltered.length, showPicker, filteredCommands.length]);
+  }, [sessionPickerActive, sessionPickerFiltered.length, agentPickerActive, agentPickerFiltered.length, showPicker, filteredCommands.length]);
 
   const handlePageUp = useCallback(() => {
+    if (sessionPickerActive && sessionPickerFiltered.length > 0) {
+      setSessionPickerIndex((i) =>
+        pagePickerIndex(i, sessionPickerFiltered.length, PICKER_PAGE_JUMP, -1),
+      );
+      return;
+    }
     if (agentPickerActive && agentPickerFiltered.length > 0) {
       setAgentPickerIndex((i) =>
         pagePickerIndex(i, agentPickerFiltered.length, PICKER_PAGE_JUMP, -1),
@@ -1484,9 +1694,15 @@ export function Repl({
     }
     if (!showPicker || filteredCommands.length === 0) return;
     setPickerIndex((i) => pagePickerIndex(i, filteredCommands.length, PICKER_PAGE_JUMP, -1));
-  }, [agentPickerActive, agentPickerFiltered.length, showPicker, filteredCommands.length]);
+  }, [sessionPickerActive, sessionPickerFiltered.length, agentPickerActive, agentPickerFiltered.length, showPicker, filteredCommands.length]);
 
   const handlePageDown = useCallback(() => {
+    if (sessionPickerActive && sessionPickerFiltered.length > 0) {
+      setSessionPickerIndex((i) =>
+        pagePickerIndex(i, sessionPickerFiltered.length, PICKER_PAGE_JUMP, 1),
+      );
+      return;
+    }
     if (agentPickerActive && agentPickerFiltered.length > 0) {
       setAgentPickerIndex((i) =>
         pagePickerIndex(i, agentPickerFiltered.length, PICKER_PAGE_JUMP, 1),
@@ -1498,6 +1714,11 @@ export function Repl({
   }, [agentPickerActive, agentPickerFiltered.length, showPicker, filteredCommands.length]);
 
   const handleTabComplete = useCallback(() => {
+    if (sessionPickerActive && sessionPickerFiltered.length > 0) {
+      const s = sessionPickerFiltered[clampPickerIndex(sessionPickerIndex, sessionPickerFiltered.length)];
+      if (s) setInput(s.sessionId);
+      return;
+    }
     if (agentPickerActive && agentPickerFiltered.length > 0) {
       const agent = agentPickerFiltered[clampPickerIndex(agentPickerIndex, agentPickerFiltered.length)];
       if (agent) setInput(agent.name);
@@ -1508,6 +1729,9 @@ export function Repl({
       if (cmd) setInput(cmd.name);
     }
   }, [
+    sessionPickerActive,
+    sessionPickerFiltered,
+    sessionPickerIndex,
     agentPickerActive,
     agentPickerFiltered,
     agentPickerIndex,
@@ -1517,6 +1741,11 @@ export function Repl({
   ]);
 
   const handleEscape = useCallback(() => {
+    if (sessionPickerActive) {
+      setSessionPickerCatalog(null);
+      setInput("");
+      return;
+    }
     if (agentPickerActive) {
       setAgentPickerCatalog(null);
       setInput("");
@@ -1532,7 +1761,7 @@ export function Repl({
     } else {
       setInput("");
     }
-  }, [agentPickerActive, showPicker, streaming]);
+  }, [sessionPickerActive, agentPickerActive, showPicker, streaming]);
 
   // ── Render ──
 
@@ -1601,6 +1830,15 @@ export function Repl({
         />
       )}
 
+      {sessionPickerActive && (
+        <SessionPicker
+          sessions={sessionPickerFiltered}
+          selectedIndex={sessionPickerIndex}
+          activeSessionId={activeSessionRef.current.sessionId}
+          filter={input}
+        />
+      )}
+
       <HRule />
 
       <InputBar
@@ -1616,7 +1854,13 @@ export function Repl({
         onOpenAgentPicker={openAgentPicker}
         onOpenSlashPicker={openSlashPicker}
         pickerNav={
-          agentPickerActive ? "agent" : showPicker ? "slash" : "none"
+          sessionPickerActive
+            ? "session"
+            : agentPickerActive
+              ? "agent"
+              : showPicker
+                ? "slash"
+                : "none"
         }
         disabled={streaming || shellApproval !== null}
         history={inputHistory}

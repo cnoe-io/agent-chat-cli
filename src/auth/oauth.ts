@@ -1,7 +1,7 @@
 /**
  * OAuth 2.0 authentication flows:
  *
- *   1. Default (PKCE): Open browser → local callback server → exchange code
+ *   1. Default (PKCE): Isolated Chromium profile (or system browser) → callback → exchange
  *   2. --manual:       Print auth URL → user copies to browser → pastes code back
  *   3. --device:       RFC 8628 Device Authorization Grant — display user_code +
  *                      verification_uri → poll token endpoint until approved
@@ -16,6 +16,12 @@ import { type IncomingMessage, type ServerResponse, createServer } from "node:ht
 import { promisify } from "node:util";
 import { getIdpHint, getServerUrl } from "../platform/config.js";
 import { discoverOAuthAgentConfig, resolveOAuthEndpoints } from "../platform/discovery.js";
+import {
+  findChromiumExecutable,
+  launchIsolatedBrowser,
+  type LoginBrowserModeOptions,
+  resolveAuthBrowserMode,
+} from "./browser-isolated.js";
 import { mergeOidcClaims, oidcClaimsFromJwt } from "./claims.js";
 import { type TokenSet, storeTokens } from "./keychain.js";
 
@@ -228,7 +234,13 @@ export async function exchangeCode(
 // Must match the redirect URIs registered on the caipe-cli Keycloak client.
 const CALLBACK_PORT = 8085;
 
-export async function loginBrowser(serverUrl: string, clientId: string): Promise<TokenSet> {
+export type { AuthBrowserMode, LoginBrowserModeOptions } from "./browser-isolated.js";
+
+export async function loginBrowser(
+  serverUrl: string,
+  clientId: string,
+  options?: LoginBrowserModeOptions,
+): Promise<TokenSet> {
   const { verifier, challenge } = generatePKCE();
   const redirectUri = `http://127.0.0.1:${CALLBACK_PORT}/callback`;
   const state = randomBytes(16).toString("hex");
@@ -247,45 +259,75 @@ export async function loginBrowser(serverUrl: string, clientId: string): Promise
     process.stderr.write(`[caipe-auth] Callback server ready on port ${CALLBACK_PORT}\n`);
   }
 
+  const browserMode = resolveAuthBrowserMode(options);
+  let closeBrowser: (() => void) | undefined;
+
   process.stdout.write("\nOpening browser for authentication…\n");
-  await openBrowser(authUrl);
-  process.stdout.write(`If the browser did not open, visit:\n  ${authUrl}\n\n`);
-  process.stdout.write("Waiting for authorization…");
-
-  if (process.env.CAIPE_AUTH_DEBUG === "1") {
-    process.stderr.write(
-      `\n[caipe-auth] Browser opened — waiting for localhost:${CALLBACK_PORT} callback\n`,
-    );
-  }
-
-  // Race the callback against a 5-minute timeout
-  const TIMEOUT_MS = 5 * 60 * 1000;
-  let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
-  const { code, state: returnedState } = await Promise.race([
-    callbackResult,
-    new Promise<never>((_, reject) => {
-      timeoutHandle = setTimeout(
-        () =>
-          reject(
-            new Error(
-              "Browser auth timed out after 5 minutes.\n" +
-                "Try: caipe auth login --manual\n" +
-                "  (copies auth URL, you paste the code back)",
-            ),
-          ),
-        TIMEOUT_MS,
+  try {
+    if (browserMode === "isolated") {
+      const chromium = findChromiumExecutable();
+      if (chromium) {
+        process.stdout.write(
+          "Using an isolated browser profile (your everyday Web UI tabs are untouched).\n",
+        );
+        if (process.env.CAIPE_AUTH_DEBUG === "1") {
+          process.stderr.write(`[caipe-auth] Isolated launch: ${chromium}\n`);
+        }
+        closeBrowser = await launchIsolatedBrowser(chromium, authUrl);
+      } else {
+        process.stderr.write(
+          "[WARN] Chromium/Chrome not found — falling back to the system default browser. " +
+            "That can affect an open Web UI session. Set CAIPE_CHROMIUM_PATH or use `caipe auth login --device`.\n",
+        );
+        await openBrowser(authUrl);
+      }
+    } else {
+      process.stdout.write(
+        "(System browser — an open Web UI session in the same profile may be affected.)\n",
       );
-    }),
-  ]);
-  clearTimeout(timeoutHandle);
+      await openBrowser(authUrl);
+    }
 
-  if (returnedState !== state) {
-    throw new Error("OAuth state mismatch — possible CSRF attack. Aborting login.");
+    process.stdout.write(`If the browser did not open, visit:\n  ${authUrl}\n\n`);
+    process.stdout.write("Waiting for authorization…");
+
+    if (process.env.CAIPE_AUTH_DEBUG === "1") {
+      process.stderr.write(
+        `\n[caipe-auth] Browser opened — waiting for localhost:${CALLBACK_PORT} callback\n`,
+      );
+    }
+
+    // Race the callback against a 5-minute timeout
+    const TIMEOUT_MS = 5 * 60 * 1000;
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined;
+    const { code, state: returnedState } = await Promise.race([
+      callbackResult,
+      new Promise<never>((_, reject) => {
+        timeoutHandle = setTimeout(
+          () =>
+            reject(
+              new Error(
+                "Browser auth timed out after 5 minutes.\n" +
+                  "Try: caipe auth login --manual\n" +
+                  "  (copies auth URL, you paste the code back)",
+              ),
+            ),
+          TIMEOUT_MS,
+        );
+      }),
+    ]);
+    clearTimeout(timeoutHandle);
+
+    if (returnedState !== state) {
+      throw new Error("OAuth state mismatch — possible CSRF attack. Aborting login.");
+    }
+
+    const tokens = await exchangeCode(code, verifier, redirectUri, serverUrl, clientId);
+    await storeTokens(tokens);
+    return tokens;
+  } finally {
+    closeBrowser?.();
   }
-
-  const tokens = await exchangeCode(code, verifier, redirectUri, serverUrl, clientId);
-  await storeTokens(tokens);
-  return tokens;
 }
 
 // ---------------------------------------------------------------------------

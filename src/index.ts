@@ -67,9 +67,27 @@ authCmd
   )
   .option("--force", "Re-authenticate even if a valid session already exists")
   .option("--setup-wizard", "Re-run the server URL setup wizard before logging in")
+  .option(
+    "--isolated",
+    "OAuth in an isolated Chromium profile (default; avoids corrupting Web UI sessions)",
+  )
+  .option(
+    "--system-browser",
+    "OAuth in your default browser profile (may affect an open Web UI tab)",
+  )
   .action(async (opts: Record<string, unknown>) => {
     const { runLogin } = await import("./auth/commands.js");
-    await runLogin(opts, program.opts());
+    await runLogin(
+      {
+        manual: opts.manual === true,
+        device: opts.device === true,
+        force: opts.force === true,
+        setupWizard: opts.setupWizard === true,
+        isolated: opts.isolated === true,
+        systemBrowser: opts.systemBrowser === true,
+      },
+      program.opts(),
+    );
   });
 
 authCmd
