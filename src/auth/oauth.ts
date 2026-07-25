@@ -15,11 +15,7 @@ import { createHash, randomBytes } from "node:crypto";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { promisify } from "node:util";
 import { getIdpHint, getServerUrl } from "../platform/config.js";
-import {
-  type AgentConfig,
-  discoverAgentConfig,
-  resolveOAuthEndpoints,
-} from "../platform/discovery.js";
+import { discoverOAuthAgentConfig, resolveOAuthEndpoints } from "../platform/discovery.js";
 import { type TokenSet, storeTokens } from "./keychain.js";
 
 const execFileAsync = promisify(execFile);
@@ -37,26 +33,14 @@ const execFileAsync = promisify(execFile);
  * back to `/oauth/authorize`, which Keycloak does not expose.
  */
 async function getOAuthEndpoints(authUrl: string, clientId: string) {
-  let config: AgentConfig = {};
-
+  let serverUrl = authUrl;
   try {
-    const bffUrl = getServerUrl();
-    const bffConfig = await discoverAgentConfig(bffUrl);
-    if (bffConfig.oauth?.authorization_endpoint) {
-      config = bffConfig;
-    }
+    serverUrl = getServerUrl();
   } catch {
-    // server.url not set — discover on auth URL only
+    // auth URL only — heuristics still run with authUrl as the hint host
   }
 
-  if (!config.oauth?.authorization_endpoint) {
-    const authConfig = await discoverAgentConfig(authUrl);
-    config = {
-      oauth: { ...config.oauth, ...authConfig.oauth },
-      a2a: authConfig.a2a ?? config.a2a,
-    };
-  }
-
+  const config = await discoverOAuthAgentConfig(serverUrl, authUrl);
   return resolveOAuthEndpoints(authUrl, config, clientId);
 }
 

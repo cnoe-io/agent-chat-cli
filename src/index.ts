@@ -121,7 +121,7 @@ configCmd
 
 configCmd
   .command("discover")
-  .description("Set auth.url from server.url /.well-known/agent.json (OAuth issuer)")
+  .description("Set auth.url from server.url (well-known + IdP heuristics)")
   .action(async () => {
     const { runConfigDiscover } = await import("./platform/configcmd.js");
     await runConfigDiscover();

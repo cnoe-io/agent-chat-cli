@@ -1,5 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { oauthIssuerFromConfig } from "../src/platform/discovery.js";
+import {
+  heuristicAuthIssuerCandidates,
+  oauthIssuerFromConfig,
+} from "../src/platform/discovery.js";
 
 describe("oauthIssuerFromConfig", () => {
   it("returns explicit issuer when present", () => {
@@ -28,5 +31,26 @@ describe("oauthIssuerFromConfig", () => {
 
   it("returns undefined when oauth block is missing", () => {
     expect(oauthIssuerFromConfig({})).toBeUndefined();
+  });
+});
+
+describe("heuristicAuthIssuerCandidates", () => {
+  it("maps grid.outshift.io to idp.grid.outshift.io realm", () => {
+    expect(heuristicAuthIssuerCandidates("https://grid.outshift.io")).toEqual([
+      "https://idp.grid.outshift.io/realms/caipe",
+      "https://grid.outshift.io/realms/caipe",
+    ]);
+  });
+
+  it("maps grid.preview host and respects CAIPE_AUTH_REALM", () => {
+    process.env.CAIPE_AUTH_REALM = "myrealm";
+    expect(heuristicAuthIssuerCandidates("https://grid.preview.outshift.io/")).toContain(
+      "https://idp.grid.preview.outshift.io/realms/myrealm",
+    );
+    delete process.env.CAIPE_AUTH_REALM;
+  });
+
+  it("returns empty for invalid URL", () => {
+    expect(heuristicAuthIssuerCandidates("not-a-url")).toEqual([]);
   });
 });

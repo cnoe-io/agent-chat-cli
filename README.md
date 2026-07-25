@@ -168,6 +168,7 @@ caipe config set auth.idp-hint duo-sso
 |----------|---------|
 | `CAIPE_SERVER_URL` | BFF base URL (agents, chat stream) |
 | `CAIPE_AUTH_URL` | OAuth / discovery base (login) |
+| `CAIPE_AUTH_REALM` | Keycloak realm name for IdP heuristics (default `caipe`) |
 | `CAIPE_IDP_HINT` | Keycloak `kc_idp_hint` |
 | `CAIPE_TOKEN` | Bearer token (headless / CI) |
 | `CAIPE_API_KEY` | API key where supported |
@@ -247,7 +248,7 @@ caipe auth logout
 |---------|-------------|
 | `caipe` / `caipe chat` | Interactive REPL |
 | `caipe auth login\|logout\|status` | OAuth session |
-| `caipe config set\|get\|unset\|discover` | Settings (`discover` sets `auth.url` from BFF `agent.json`) |
+| `caipe config set\|get\|unset\|discover` | Settings (`discover` sets `auth.url` via well-known URLs or Grid-style heuristics) |
 | `caipe agents list\|info` | Server agents |
 | `caipe skills list\|install\|preview\|update` | Skill catalog |
 | `caipe memory` | Project memory files |
@@ -279,7 +280,7 @@ Older BFFs only allow `webui`, `slack`, and `webex`. The CLI tries **`slack` fir
 
 ### OAuth 404 on `/oauth/authorize`
 
-Set **`server.url`** to the UI/BFF, then run **`caipe config discover`** (or set `auth.url` to the full Keycloak realm issuer, e.g. `https://idp.example.com/realms/caipe`).
+Set **`server.url`** to the UI/BFF, then run **`caipe config discover`**. Discovery tries, in order: `/.well-known/agent.json`, OIDC metadata on the BFF host, then heuristics (e.g. `grid.*` → `idp.grid.*/realms/caipe`). Override the realm with **`CAIPE_AUTH_REALM`**. You can still set **`auth.url`** manually (e.g. `https://idp.example.com/realms/caipe`).
 
 ---
 

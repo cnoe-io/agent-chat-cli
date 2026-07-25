@@ -181,14 +181,121 @@ export function oauthIssuerFromConfig(config: AgentConfig): string | undefined {
   return undefined;
 }
 
+export interface AuthIssuerDiscovery {
+  issuer: string;
+  /** Short explanation for CLI output (no secrets) */
+  detail: string;
+}
+
+const DEFAULT_OAUTH_REALM = "caipe";
+
 /**
- * Fetch `/.well-known/agent.json` (or OIDC metadata) for `serverUrl` and return
- * the issuer URL for `auth.url`, if discovery succeeds.
+ * Guess Keycloak realm issuer URLs when the BFF does not publish agent.json.
+ *
+ * Grid-style hosts: `grid.example.com` → `idp.grid.example.com/realms/<realm>`.
+ * Override realm with `CAIPE_AUTH_REALM` (default `caipe`).
  */
-export async function discoverAuthIssuer(serverUrl: string): Promise<string | undefined> {
+export function heuristicAuthIssuerCandidates(serverUrl: string): string[] {
+  const trimmed = serverUrl.trim().replace(/\/+$/, "");
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    return [];
+  }
+  if (parsed.protocol !== "https:" && parsed.protocol !== "http:") {
+    return [];
+  }
+
+  const realm = process.env.CAIPE_AUTH_REALM?.trim() || DEFAULT_OAUTH_REALM;
+  const host = parsed.hostname;
+  const candidates: string[] = [];
+
+  if (host.startsWith("grid.")) {
+    candidates.push(`${parsed.protocol}//idp.${host}/realms/${realm}`);
+  }
+
+  // Keycloak served under /realms/ on the same host as the UI
+  candidates.push(`${parsed.protocol}//${host}/realms/${realm}`);
+
+  return [...new Set(candidates)];
+}
+
+async function issuerFromDiscoveryBase(baseUrl: string): Promise<string | undefined> {
   clearAgentConfigCache();
-  const config = await discoverAgentConfig(serverUrl);
+  const config = await discoverAgentConfig(baseUrl);
   return oauthIssuerFromConfig(config);
+}
+
+/**
+ * Fetch `/.well-known/agent.json` (or OIDC metadata) for `serverUrl`, then try
+ * heuristic IdP URLs, and return the issuer for `auth.url` when found.
+ */
+export async function discoverAuthIssuer(
+  serverUrl: string,
+): Promise<AuthIssuerDiscovery | undefined> {
+  const base = serverUrl.trim().replace(/\/+$/, "");
+
+  const direct = await issuerFromDiscoveryBase(base);
+  if (direct) {
+    return {
+      issuer: direct,
+      detail: `${base} (well-known discovery)`,
+    };
+  }
+
+  for (const candidate of heuristicAuthIssuerCandidates(base)) {
+    const issuer = await issuerFromDiscoveryBase(candidate);
+    if (issuer) {
+      return {
+        issuer,
+        detail: `${candidate} (inferred from ${base})`,
+      };
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Resolve OAuth agent config: BFF agent.json, auth URL OIDC, then heuristic IdP hosts.
+ */
+export async function discoverOAuthAgentConfig(
+  serverUrl: string,
+  authUrl: string,
+): Promise<AgentConfig> {
+  let config: AgentConfig = {};
+
+  try {
+    const bffConfig = await discoverAgentConfig(serverUrl);
+    if (bffConfig.oauth?.authorization_endpoint) {
+      return bffConfig;
+    }
+    config = bffConfig;
+  } catch {
+    // server.url not configured
+  }
+
+  if (!config.oauth?.authorization_endpoint) {
+    clearAgentConfigCache();
+    const authConfig = await discoverAgentConfig(authUrl);
+    config = {
+      oauth: { ...config.oauth, ...authConfig.oauth },
+      a2a: authConfig.a2a ?? config.a2a,
+    };
+  }
+
+  if (!config.oauth?.authorization_endpoint) {
+    for (const candidate of heuristicAuthIssuerCandidates(serverUrl)) {
+      clearAgentConfigCache();
+      const guessed = await discoverAgentConfig(candidate);
+      if (guessed.oauth?.authorization_endpoint) {
+        return guessed;
+      }
+    }
+  }
+
+  return config;
 }
 
 // ---------------------------------------------------------------------------

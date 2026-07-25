@@ -71,19 +71,17 @@ export async function runConfigSet(key: string, value: string): Promise<void> {
     settings.server = { ...settings.server, url: v };
     clearAgentConfigCache();
 
-    const discoveredIssuer = await discoverAuthIssuer(v);
-    if (discoveredIssuer) {
-      settings.auth = { ...settings.auth, url: discoveredIssuer };
+    const discovery = await discoverAuthIssuer(v);
+    if (discovery) {
+      settings.auth = { ...settings.auth, url: discovery.issuer };
     } else {
       settings.auth = { ...settings.auth, url: v };
     }
 
     writeSettings(settings);
     process.stdout.write(`Set server.url = ${v}\n`);
-    if (discoveredIssuer) {
-      process.stdout.write(
-        `Set auth.url = ${discoveredIssuer} (from ${v}/.well-known/agent.json)\n`,
-      );
+    if (discovery) {
+      process.stdout.write(`Set auth.url = ${discovery.issuer} (${discovery.detail})\n`);
     } else {
       process.stdout.write(
         `Set auth.url = ${v} (discovery unavailable; set auth.url manually if BFF and IdP differ)\n`,
@@ -228,18 +226,19 @@ export async function runConfigDiscover(): Promise<void> {
     process.exit(3);
   }
 
-  const issuer = await discoverAuthIssuer(serverUrl);
-  if (!issuer) {
+  const discovery = await discoverAuthIssuer(serverUrl);
+  if (!discovery) {
     process.stderr.write(
-      `[ERROR] Could not discover OAuth issuer from ${serverUrl}/.well-known/agent.json\n`,
+      `[ERROR] Could not discover OAuth issuer for ${serverUrl} ` +
+        `(tried well-known URLs and host heuristics; set auth.url manually)\n`,
     );
     process.exit(3);
   }
 
   const settings = readSettings();
-  settings.auth = { ...settings.auth, url: issuer };
+  settings.auth = { ...settings.auth, url: discovery.issuer };
   writeSettings(settings);
-  process.stdout.write(`Set auth.url = ${issuer} (from ${serverUrl}/.well-known/agent.json)\n`);
+  process.stdout.write(`Set auth.url = ${discovery.issuer} (${discovery.detail})\n`);
 }
 
 async function readLine(): Promise<string> {
