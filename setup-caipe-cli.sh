@@ -2,13 +2,13 @@
 # setup-caipe-cli.sh — clone, compile, and install the caipe CLI from source
 #
 # Usage:
-#   bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/agent-chat-cli/main/setup-caipe-cli.sh)
+#   bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/setup-caipe-cli.sh)
 #
 # Run a command after install (e.g. chat):
 #   bash <(curl -fsSL .../setup-caipe-cli.sh) -- chat
 #
 # Environment:
-#   CAIPE_CLI_REPO       GitHub repo (default: cnoe-io/agent-chat-cli)
+#   CAIPE_CLI_REPO       GitHub repo (default: cnoe-io/caipe-cli)
 #   CAIPE_CLI_BRANCH     Branch to build (default: main)
 #   CAIPE_CLI_DIR        Persistent clone directory (default: ~/.cache/caipe-cli-build/src)
 #   CAIPE_INSTALL_DIR    Install binary here (default: ~/.local/bin)
@@ -18,7 +18,7 @@
 
 set -euo pipefail
 
-REPO="${CAIPE_CLI_REPO:-cnoe-io/agent-chat-cli}"
+REPO="${CAIPE_CLI_REPO:-cnoe-io/caipe-cli}"
 BRANCH="${CAIPE_CLI_BRANCH:-main}"
 SRC_DIR="${CAIPE_CLI_DIR:-${HOME}/.cache/caipe-cli-build/src}"
 INSTALL_DIR="${CAIPE_INSTALL_DIR:-${HOME}/.local/bin}"

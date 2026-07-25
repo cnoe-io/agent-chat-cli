@@ -1,189 +1,287 @@
 # CAIPE CLI
 
-AI-assisted coding, workflows, and platform engineering from the terminal.
+Terminal client for [CAIPE](https://github.com/cnoe-io/ai-platform-engineering): chat with dynamic agents, manage skills, and run headless prompts against a remote CAIPE UI / BFF.
 
-CAIPE CLI is a dedicated TypeScript/Bun CLI that connects to a [CAIPE server](https://github.com/cnoe-io/ai-platform-engineering) via the A2A (Agent-to-Agent) or AG-UI streaming protocol. It provides an interactive chat REPL, headless mode for CI/CD pipelines, skill management, and secure credential storage.
+## TL;DR
 
-## Installation
-
-### Run with npx (no global install)
-
-From npm (after the first `caipe/v*` release is published):
+**Install once** (pick one):
 
 ```bash
-npx caipe --version
-npx caipe config set server.url https://your-caipe-server.example.com
-npx caipe auth login
-npx caipe chat
+git clone https://github.com/cnoe-io/caipe-cli.git && cd caipe-cli && bun install && npm run compile
+# binary: ./dist/caipe  — add to PATH or symlink ~/.local/bin/caipe
 ```
 
-From GitHub `main` (runs via bundled `tsx`; Node 20+):
+**Point at Grid preview, sign in, chat:**
 
 ```bash
-npx github:cnoe-io/agent-chat-cli -- --version
-npx github:cnoe-io/agent-chat-cli -- auth login
+caipe config set server.url https://grid.preview.outshift.io
+caipe config set auth.url https://idp.grid.preview.outshift.io/realms/caipe
+caipe auth login
+caipe agents list
+caipe chat --agent '<id-from-agents-list>'
 ```
 
-Use `--` before caipe args when using the `github:` specifier.
+Type messages at the `❯` prompt. **`/`** for commands, **`Ctrl+D`** to exit.
 
-### Build from source (one-liner)
+Other host (UI serves OAuth on the same URL): set only `server.url`, then `caipe auth login` and `caipe chat`.
+
+---
+
+- **Node.js 20+** (for `npx`, tests, and the Node bundle)
+- **Bun 1.1+** (recommended for `npm run compile` and local dev)
+- A reachable CAIPE deployment (API + OAuth)
+
+Optional: **keytar** only if you set `auth.credential-storage` to `keychain`.
+
+---
+
+## Install
+
+### Option A — Run from GitHub (no build)
 
 ```bash
-bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/agent-chat-cli/main/setup-caipe-cli.sh)
+npx github:cnoe-io/caipe-cli -- --version
 ```
 
-With Grid URL: `CAIPE_SERVER_URL=https://grid.preview.outshift.io bash <(curl -fsSL ...)`
-
-### Released binary (curl installer)
+Use `--` before CLI arguments:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/cnoe-io/agent-chat-cli/main/install.sh | sh
+npx github:cnoe-io/caipe-cli -- auth login
+npx github:cnoe-io/caipe-cli -- chat
 ```
 
-Requires a **`caipe/v*.*.*`** GitHub release. Options: `CAIPE_INSTALL_DIR`, `CAIPE_VERSION`.
+### Option B — One-line setup script
 
-### npm global
+Installs Bun if needed, builds a native binary, and puts `caipe` on your `PATH` (default: `~/.local/bin`):
+
+```bash
+bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/setup-caipe-cli.sh)
+```
+
+Preconfigure the server:
+
+```bash
+CAIPE_SERVER_URL=https://grid.preview.outshift.io \
+  bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/setup-caipe-cli.sh)
+```
+
+### Option C — Released binary (when available)
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/install.sh | sh
+```
+
+Requires a GitHub release tagged **`caipe/v*.*.*`**. Set `CAIPE_VERSION` or `CAIPE_INSTALL_DIR` if needed.
+
+### Option D — npm (after publish)
 
 ```bash
 npm install -g caipe
+caipe --version
 ```
 
-### Git clone + compile
+---
+
+## Build from source
 
 ```bash
-git clone https://github.com/cnoe-io/agent-chat-cli.git
-cd agent-chat-cli
-bun install && npm rebuild keytar && npm run compile
+git clone https://github.com/cnoe-io/caipe-cli.git
+cd caipe-cli
+bun install
+npm run compile          # native binary → dist/caipe
 ./dist/caipe --version
 ```
 
-## Quick start
+Add `./dist` or `~/.local/bin` to your `PATH`, or symlink:
 
 ```bash
-# 1. Point to your CAIPE server
-caipe config set server.url https://your-caipe-server.example.com
-
-# 2. Authenticate (opens browser for OAuth)
-caipe auth login
-
-# 3. Start chatting
-caipe
+ln -sf "$(pwd)/dist/caipe" ~/.local/bin/caipe
 ```
 
-## Commands
+### Other build targets
 
-| Command | Description |
-|---|---|
-| `caipe` | Open interactive chat REPL (default) |
-| `caipe chat` | Open chat (explicit). Options: `--agent`, `--protocol`, `--headless`, `--resume` |
-| `caipe auth login` | Authenticate via OAuth (browser or `--device` flow) |
-| `caipe auth logout` | Remove stored credentials |
-| `caipe auth status` | Print current auth state |
-| `caipe config set <key> <value>` | Set a configuration key |
-| `caipe config get <key>` | Print the current value of a key |
-| `caipe config unset <key>` | Remove a configuration key |
-| `caipe skills list` | List available skills from catalog |
-| `caipe skills install <name>` | Install a skill |
-| `caipe skills preview <name>` | Display full SKILL.md content |
-| `caipe skills update [name]` | Check and update installed skills |
-| `caipe agents list` | List available server agents |
-| `caipe agents info <name>` | Show agent capabilities |
-| `caipe memory` | Manage persistent context files |
-| `caipe commit` | DCO-compliant commit with AI attribution |
+| Command | Output |
+|--------|--------|
+| `npm run dev -- chat` | Run via **tsx** (fast iteration, no compile) |
+| `npm run build` | Node bundle `dist/bundle.cjs` (keytar external) |
+| `node bin/caipe.cjs chat` | Entry script: platform binary → `dist/caipe` → bundle → tsx |
+| `npm run compile:all` | Cross-compile all platform binaries in `dist/` |
 
-### Global options
-
-```
---agent <name>    CAIPE server agent to use for this session (default: "default")
---url <url>       Override server.url from settings.json
---no-color        Disable ANSI color output
---json            Machine-readable JSON output (non-interactive commands)
--v, --version     Print version and exit
-```
-
-## Interactive chat
-
-The chat REPL provides:
-
-- **Streaming responses** via A2A or AG-UI Server-Sent Events
-- **Slash commands** — type `/` for a picker: `/clear`, `/compact`, `/login`, `/skills`, `/agents`, `/help`, `/exit`
-- **Readline-style keybindings** — `Ctrl+A/E` (start/end), `Ctrl+B/F` (char movement), `Alt+B/F` (word movement), `Ctrl+U/K/W` (kill line/word), `Ctrl+D` (exit)
-- **Input history** — `Up/Down` or `Ctrl+P/N` to cycle through previous inputs
-- **Shell pipes** — `!command` runs a shell command and returns output
-- **Tool call visualization** — active tool calls displayed in the status footer
-
-### Headless mode
-
-For CI/CD pipelines and scripting:
+**Compile note:** `npm run compile` uses Bun with **`keytar` external** so the default **encrypted-file** credential store works without building native modules. If you use the keychain backend:
 
 ```bash
-# Single prompt
-caipe chat --headless --prompt "Explain the deployment architecture"
-
-# From file
-caipe chat --headless --prompt-file question.txt --output json
-
-# Multi-turn via stdin
-echo -e "Hello\nWhat is A2A?" | caipe chat --headless --interactive-stdin
-
-# With explicit token
-caipe chat --headless --token "$JWT" --prompt "status check"
-```
-
-## Configuration
-
-Settings are stored in `~/.config/caipe/settings.json`.
-
-| Key | Description | Example |
-|---|---|---|
-| `server.url` | CAIPE server base URL | `https://caipe.example.com` |
-| `auth.url` | OAuth authorization endpoint (auto-discovered if not set) | `https://auth.example.com` |
-| `auth.apiKey` | Static API key (alternative to OAuth) | `sk-...` |
-| `auth.credential-storage` | Credential backend: `encrypted-file` (default) or `keychain` | `encrypted-file` |
-
-### Credential storage
-
-By default, credentials are stored in `~/.config/caipe/credentials.enc` using AES-256-GCM encryption with a machine-specific key (derived via PBKDF2 from the platform's hardware UUID). This avoids macOS Keychain popups.
-
-To use the OS keychain instead:
-
-```bash
+npm install keytar
+npm rebuild keytar
 caipe config set auth.credential-storage keychain
 ```
 
-This requires the optional `keytar` native module (`npm install keytar`).
+Warnings about missing `caipe-darwin-arm64` on npm are normal until platform packages are published.
 
-## Development
+### Verify the build
 
 ```bash
-cd cli
-bun install                # install dependencies
-npm run dev -- chat        # run in development mode (tsx)
-npx vitest run             # run unit tests (114 tests)
-npm run lint               # lint with Biome
-npm run compile            # build single-file binary for current platform
-npm run compile:all        # cross-compile for all platforms
+npm run lint
+npm test
 ```
 
-### Project structure
+---
+
+## Configure and sign in
+
+Settings live in **`~/.config/caipe/settings.json`**.
+
+### Typical setup (single host)
+
+When the UI exposes OAuth and `/.well-known/agent.json` on the same host:
+
+```bash
+caipe config set server.url https://your-caipe.example.com
+caipe auth login
+caipe agents list
+caipe chat
+```
+
+`config set server.url` also sets **`auth.url`** to the same value.
+
+### Grid preview (split API vs IdP)
+
+On **`grid.preview.outshift.io`**, the BFF may not expose `/oauth/authorize` yet. Point **API** at Grid and **OAuth** at Keycloak:
+
+```bash
+caipe config set server.url https://grid.preview.outshift.io
+caipe config set auth.url https://idp.grid.preview.outshift.io/realms/caipe
+rm -f ~/.config/caipe/agent-config.json
+caipe auth logout    # if you have stale tokens
+caipe auth login
+```
+
+Optional IdP shortcut (e.g. Duo SSO):
+
+```bash
+caipe config set auth.idp-hint duo-sso
+# or: export CAIPE_IDP_HINT=duo-sso
+```
+
+### Environment overrides
+
+| Variable | Purpose |
+|----------|---------|
+| `CAIPE_SERVER_URL` | BFF base URL (agents, chat stream) |
+| `CAIPE_AUTH_URL` | OAuth / discovery base (login) |
+| `CAIPE_IDP_HINT` | Keycloak `kc_idp_hint` |
+| `CAIPE_TOKEN` | Bearer token (headless / CI) |
+| `CAIPE_API_KEY` | API key where supported |
+
+### Auth troubleshooting
+
+| Symptom | What to do |
+|---------|------------|
+| `Already authenticated as (unknown)` | `caipe auth logout` then `caipe auth login`, or upgrade to a build with session fixes |
+| Browser **404** on `/oauth/authorize` | Set `auth.url` to the realm issuer (see Grid preview above) |
+| `Invalid client_type: cli` | CLI retries with `slack` on older BFFs; upgrade UI to add `cli` to `VALID_CLIENT_TYPES` |
+| **403** `agent#use` / `pdp_denied` | Run `caipe agents list`, then `caipe chat --agent <id>` for an agent you can use; ask admin for OpenFGA **agent#use** if the list is empty |
+
+---
+
+## Use the CLI
+
+### Interactive chat (default)
+
+```bash
+caipe                  # same as caipe chat
+caipe chat --agent my-agent
+```
+
+In the REPL:
+
+- **`/`** — slash commands (`/agents`, `/skills`, `/login`, `/help`, `/exit`, …)
+- **`!cmd`** — run a shell command and inject output
+- **`Esc`** — abort streaming
+
+### Agents and skills
+
+```bash
+caipe agents list
+caipe agents info <name>
+caipe skills list
+caipe skills install <name>
+```
+
+### Headless / CI
+
+```bash
+caipe chat --headless --prompt "Summarize open incidents"
+caipe chat --headless --prompt-file question.txt --output json
+caipe chat --headless --token "$JWT" --prompt "health check"
+```
+
+### Auth commands
+
+```bash
+caipe auth status
+caipe auth login --force
+caipe auth login --device      # device code flow
+caipe auth login --manual      # paste authorization code
+caipe auth logout
+```
+
+---
+
+## Configuration reference
+
+| Key | Description |
+|-----|-------------|
+| `server.url` | CAIPE UI / BFF HTTPS base URL |
+| `auth.url` | OAuth and discovery base (Keycloak realm URL or UI URL) |
+| `auth.idp-hint` | Skip Keycloak login chooser (`kc_idp_hint`) |
+| `auth.apiKey` | Static API key (headless alternative) |
+| `auth.credential-storage` | `encrypted-file` (default) or `keychain` |
+
+**Default credentials:** encrypted file at `~/.config/caipe/credentials.enc` (AES-256-GCM, machine-derived key). No Keychain prompts unless you opt into `keychain`.
+
+---
+
+## Command reference
+
+| Command | Description |
+|---------|-------------|
+| `caipe` / `caipe chat` | Interactive REPL |
+| `caipe auth login\|logout\|status` | OAuth session |
+| `caipe config set\|get\|unset\|discover` | Settings (`discover` sets `auth.url` from BFF `agent.json`) |
+| `caipe agents list\|info` | Server agents |
+| `caipe skills list\|install\|preview\|update` | Skill catalog |
+| `caipe memory` | Project memory files |
+| `caipe commit` | DCO-aware commit helper |
+
+Global flags: `--agent`, `--url`, `--json`, `--no-color`, `-v` / `--version`.
+
+---
+
+## Project layout
 
 ```
-cli/
-  src/
-    index.ts              # CLI entry point (Commander.js)
-    auth/                 # OAuth, keychain, token management
-    chat/                 # Repl.tsx (Ink 5 TUI), streaming, pipes
-    headless/             # Non-interactive mode
-    platform/             # Config, discovery, setup wizard, display
-    skills/               # Skill catalog and management
-    agents/               # Agent registry
-    commit/               # DCO-compliant commit helper
-    memory/               # Memory file management
-  tests/                  # Vitest test suite
-  npm/                    # Platform-specific npm packages (for npm install -g)
-  install.sh              # curl installer
-  build-binary.mjs        # Node.js SEA build script (alternative to Bun compile)
+caipe-cli/
+  src/           TypeScript source
+  bin/caipe.cjs  npm/npx launcher
+  dist/          compile output (gitignored)
+  tests/         Vitest
+  setup-caipe-cli.sh
+  install.sh
 ```
+
+---
+
+## Troubleshooting
+
+### `Invalid client_type: "cli"`
+
+Older BFFs only allow `webui`, `slack`, and `webex`. The CLI tries **`slack` first**, then `cli`, when creating conversations. Rebuild from latest `main` if you still see a `cli`-only error.
+
+### OAuth 404 on `/oauth/authorize`
+
+Set **`server.url`** to the UI/BFF, then run **`caipe config discover`** (or set `auth.url` to the full Keycloak realm issuer, e.g. `https://idp.example.com/realms/caipe`).
+
+---
 
 ## License
 

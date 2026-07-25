@@ -40,6 +40,7 @@ import type { StreamAdapter } from "./stream.js";
 interface ReplProps {
   session: ChatSession;
   adapter: StreamAdapter;
+  initialAgent: Agent;
   systemContext: string;
   serverUrl?: string;
   onExit: (session: ChatSession) => void;
@@ -455,6 +456,7 @@ function matchGreeting(input: string): string | null {
 export function Repl({
   session,
   adapter,
+  initialAgent,
   systemContext,
   serverUrl,
   onExit,
@@ -476,7 +478,7 @@ export function Repl({
 
   // ── Active adapter + agent — swappable via /agents ──
   const adapterRef = useRef<StreamAdapter>(adapter);
-  const [currentAgent, setCurrentAgent] = useState<Agent>(DEFAULT_AGENT);
+  const [currentAgent, setCurrentAgent] = useState<Agent>(initialAgent);
 
   // ── Input history: previous user inputs for Up/Down navigation ──
   const [inputHistory, setInputHistory] = useState<string[]>([]);

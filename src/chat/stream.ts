@@ -90,6 +90,29 @@ export interface StreamAdapter {
   connect(payload: SendPayload): AsyncIterable<StreamEvent>;
 }
 
+function conversationCreateError(status: number, bodyText: string, agentId: string): Error {
+  try {
+    const body = JSON.parse(bodyText) as { code?: string; error?: string; reason?: string };
+    if (status === 403 && body.code === "agent#use") {
+      return new Error(
+        `Permission denied for agent "${agentId}" (OpenFGA agent#use). ` +
+          "Run `caipe agents list` and use `caipe chat --agent <id>` for an agent you can access, " +
+          "or ask an admin to grant use on this agent.",
+      );
+    }
+    if (body.error) {
+      return new Error(`Failed to create conversation (${status}): ${body.error}`);
+    }
+  } catch {
+    /* fall through */
+  }
+  return new Error(`Failed to create conversation (${status}): ${bodyText}`);
+}
+
+function shouldTryNextClientType(status: number, bodyText: string): boolean {
+  return status === 400 && bodyText.includes("Invalid client_type");
+}
+
 // ---------------------------------------------------------------------------
 // AG-UI adapter — direct fetch to /api/v1/chat/stream/start
 // ---------------------------------------------------------------------------
@@ -130,21 +153,38 @@ export class AguiAdapter implements StreamAdapter {
     const url = `${base}/api/chat/conversations`;
 
     try {
-      const res = await fetch(url, {
-        method: "POST",
-        headers: {
-          Authorization: `Bearer ${token}`,
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          title: "CLI session",
-          client_type: "cli",
-          agent_id: agentId,
-        }),
-      });
-      if (!res.ok) {
+      const attempts: Array<{ client_type: "slack" | "cli"; metadata: Record<string, unknown> }> =
+        [
+          { client_type: "slack", metadata: { source: "caipe-cli", bridged_as: "slack" } },
+          { client_type: "cli", metadata: { source: "caipe-cli" } },
+        ];
+      let res: Response | undefined;
+      let lastError = "";
+
+      for (const attempt of attempts) {
+        res = await fetch(url, {
+          method: "POST",
+          headers: {
+            Authorization: `Bearer ${token}`,
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({
+            title: "CLI session",
+            client_type: attempt.client_type,
+            agent_id: agentId,
+            metadata: attempt.metadata,
+          }),
+        });
+        if (res.ok) break;
+
         const text = await res.text().catch(() => "");
-        throw new Error(`Failed to create conversation (${res.status}): ${text}`);
+        lastError = text;
+        if (shouldTryNextClientType(res.status, text)) continue;
+        throw conversationCreateError(res.status, text, agentId);
+      }
+
+      if (!res?.ok) {
+        throw conversationCreateError(res?.status ?? 0, lastError, agentId);
       }
       const json = (await res.json()) as { data?: { conversation?: { _id?: string } } };
       const serverId = json?.data?.conversation?._id;
@@ -160,7 +200,7 @@ export class AguiAdapter implements StreamAdapter {
 
   async *connect(payload: SendPayload): AsyncIterable<StreamEvent> {
     const token = await this.getAccessToken();
-    const agentId = this.agent.name === "default" ? payload.agentName : this.agent.name;
+    const agentId = this.agent.name;
 
     let conversationId: string;
     try {

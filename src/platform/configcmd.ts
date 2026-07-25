@@ -2,8 +2,8 @@
  * Command handlers for `caipe config set/get/unset`.
  */
 
-import { readSettings, writeSettings } from "./config.js";
-import { clearAgentConfigCache } from "./discovery.js";
+import { getServerUrl, readSettings, writeSettings } from "./config.js";
+import { clearAgentConfigCache, discoverAuthIssuer } from "./discovery.js";
 
 function normalizeConfigUrl(value: string, key: string): string {
   const v = value.trim().replace(/\/+$/, "");
@@ -50,6 +50,13 @@ export async function runConfigSet(key: string, value: string): Promise<void> {
 
   if (key === "auth.url") {
     const v = normalizeConfigUrl(value, "auth.url");
+    if (!v.includes("/realms/") && !v.includes("/.well-known/")) {
+      process.stderr.write(
+        "[WARN] auth.url has no /realms/<realm> path. Keycloak OIDC discovery usually needs the full realm issuer " +
+          "(e.g. https://idp.example.com/realms/caipe). For split BFF+IdP setups, set server.url to the UI/BFF " +
+          "so the CLI can read /.well-known/agent.json.\n",
+      );
+    }
     const settings = readSettings();
     settings.auth = { ...settings.auth, url: v };
     writeSettings(settings);
@@ -62,13 +69,26 @@ export async function runConfigSet(key: string, value: string): Promise<void> {
     const v = normalizeConfigUrl(value, "server.url");
     const settings = readSettings();
     settings.server = { ...settings.server, url: v };
-    // Single-URL Grid/caipe-ui setups: OAuth and BFF share the same host.
-    settings.auth = { ...settings.auth, url: v };
-    writeSettings(settings);
-    // Invalidate cached discovery doc — new server may have different endpoints
     clearAgentConfigCache();
+
+    const discoveredIssuer = await discoverAuthIssuer(v);
+    if (discoveredIssuer) {
+      settings.auth = { ...settings.auth, url: discoveredIssuer };
+    } else {
+      settings.auth = { ...settings.auth, url: v };
+    }
+
+    writeSettings(settings);
     process.stdout.write(`Set server.url = ${v}\n`);
-    process.stdout.write(`Set auth.url = ${v}\n`);
+    if (discoveredIssuer) {
+      process.stdout.write(
+        `Set auth.url = ${discoveredIssuer} (from ${v}/.well-known/agent.json)\n`,
+      );
+    } else {
+      process.stdout.write(
+        `Set auth.url = ${v} (discovery unavailable; set auth.url manually if BFF and IdP differ)\n`,
+      );
+    }
     return;
   }
 
@@ -191,6 +211,35 @@ export async function runConfigUnset(key: string): Promise<void> {
 
   writeSettings(settings);
   process.stdout.write(`Removed ${key}.\n`);
+}
+
+// ---------------------------------------------------------------------------
+// config discover — sync auth.url from server.url /.well-known/agent.json
+// ---------------------------------------------------------------------------
+
+export async function runConfigDiscover(): Promise<void> {
+  let serverUrl: string;
+  try {
+    serverUrl = getServerUrl();
+  } catch {
+    process.stderr.write(
+      "[ERROR] server.url is not set. Run: caipe config set server.url <bff-url>\n",
+    );
+    process.exit(3);
+  }
+
+  const issuer = await discoverAuthIssuer(serverUrl);
+  if (!issuer) {
+    process.stderr.write(
+      `[ERROR] Could not discover OAuth issuer from ${serverUrl}/.well-known/agent.json\n`,
+    );
+    process.exit(3);
+  }
+
+  const settings = readSettings();
+  settings.auth = { ...settings.auth, url: issuer };
+  writeSettings(settings);
+  process.stdout.write(`Set auth.url = ${issuer} (from ${serverUrl}/.well-known/agent.json)\n`);
 }
 
 async function readLine(): Promise<string> {

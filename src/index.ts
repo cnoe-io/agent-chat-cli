@@ -18,7 +18,11 @@ program
   .name("caipe")
   .description("Custom Agents, workflows and more... caipe.io")
   .version(pkg.version, "-v, --version", "Print version and exit")
-  .option("--agent <name>", "CAIPE server agent to use for this session", "default")
+  .option(
+    "--agent <name>",
+    "Dynamic agent id from `caipe agents list` (default: first agent you can use)",
+    "default",
+  )
   .option("--url <url>", "Override server.url from settings.json for this invocation only")
   .option("--no-color", "Disable ANSI color output")
   .option("--json", "Machine-readable JSON output (non-interactive commands only)");
@@ -113,6 +117,14 @@ configCmd
   .action(async (key: string) => {
     const { runConfigUnset } = await import("./platform/configcmd.js");
     await runConfigUnset(key);
+  });
+
+configCmd
+  .command("discover")
+  .description("Set auth.url from server.url /.well-known/agent.json (OAuth issuer)")
+  .action(async () => {
+    const { runConfigDiscover } = await import("./platform/configcmd.js");
+    await runConfigDiscover();
   });
 
 // ---------------------------------------------------------------------------

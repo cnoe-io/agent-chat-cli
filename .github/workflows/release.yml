@@ -123,7 +123,7 @@ jobs:
 
             **Quick install (recommended):**
             ```bash
-            curl -fsSL https://raw.githubusercontent.com/cnoe-io/agent-chat-cli/main/install.sh | sh
+            curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/install.sh | sh
             ```
 
             **npm (automatic platform detection):**

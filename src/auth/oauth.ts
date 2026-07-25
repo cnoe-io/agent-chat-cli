@@ -14,8 +14,12 @@ import { execFile } from "node:child_process";
 import { createHash, randomBytes } from "node:crypto";
 import { type IncomingMessage, type ServerResponse, createServer } from "node:http";
 import { promisify } from "node:util";
-import { getIdpHint } from "../platform/config.js";
-import { discoverAgentConfig, resolveOAuthEndpoints } from "../platform/discovery.js";
+import { getIdpHint, getServerUrl } from "../platform/config.js";
+import {
+  type AgentConfig,
+  discoverAgentConfig,
+  resolveOAuthEndpoints,
+} from "../platform/discovery.js";
 import { type TokenSet, storeTokens } from "./keychain.js";
 
 const execFileAsync = promisify(execFile);
@@ -24,9 +28,36 @@ const execFileAsync = promisify(execFile);
 // Resolved endpoint cache per process (discovery runs once per invocation)
 // ---------------------------------------------------------------------------
 
-async function getOAuthEndpoints(serverUrl: string, clientId: string) {
-  const config = await discoverAgentConfig(serverUrl);
-  return resolveOAuthEndpoints(serverUrl, config, clientId);
+/**
+ * Resolve OAuth endpoints for login/token exchange.
+ *
+ * Split deployments (Grid BFF + separate IdP): prefer `/.well-known/agent.json`
+ * from `server.url` — it carries Keycloak endpoints from OIDC_ISSUER. Using
+ * only `auth.url` without `/realms/<realm>` fails OIDC discovery and falls
+ * back to `/oauth/authorize`, which Keycloak does not expose.
+ */
+async function getOAuthEndpoints(authUrl: string, clientId: string) {
+  let config: AgentConfig = {};
+
+  try {
+    const bffUrl = getServerUrl();
+    const bffConfig = await discoverAgentConfig(bffUrl);
+    if (bffConfig.oauth?.authorization_endpoint) {
+      config = bffConfig;
+    }
+  } catch {
+    // server.url not set — discover on auth URL only
+  }
+
+  if (!config.oauth?.authorization_endpoint) {
+    const authConfig = await discoverAgentConfig(authUrl);
+    config = {
+      oauth: { ...config.oauth, ...authConfig.oauth },
+      a2a: authConfig.a2a ?? config.a2a,
+    };
+  }
+
+  return resolveOAuthEndpoints(authUrl, config, clientId);
 }
 
 // ---------------------------------------------------------------------------

@@ -2,7 +2,7 @@
 # install.sh — CAIPE CLI installer
 #
 # Usage:
-#   curl -fsSL https://raw.githubusercontent.com/cnoe-io/agent-chat-cli/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/install.sh | sh
 #
 # Options (environment variables):
 #   CAIPE_INSTALL_DIR   — override install directory (default: /usr/local/bin)
@@ -13,7 +13,7 @@
 
 set -e
 
-REPO="cnoe-io/agent-chat-cli"
+REPO="cnoe-io/caipe-cli"
 INSTALL_DIR="${CAIPE_INSTALL_DIR:-/usr/local/bin}"
 VERSION="${CAIPE_VERSION:-}"
 NO_VERIFY="${CAIPE_NO_VERIFY:-0}"

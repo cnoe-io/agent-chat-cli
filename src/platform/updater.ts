@@ -19,7 +19,7 @@ import { join } from "node:path";
 import semver from "semver";
 import { globalConfigDir } from "./config.js";
 
-const RELEASES_URL = "https://api.github.com/repos/cnoe-io/agent-chat-cli/releases/latest";
+const RELEASES_URL = "https://api.github.com/repos/cnoe-io/caipe-cli/releases/latest";
 const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
 const CHECK_TIMEOUT_MS = 5_000;
 

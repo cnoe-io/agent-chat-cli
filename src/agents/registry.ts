@@ -90,6 +90,46 @@ export function getAgent(agents: Agent[], name: string): Agent | null {
   );
 }
 
+/** Sentinel CLI flag value — not a server agent id. */
+export function isAutoAgentName(name: string | undefined): boolean {
+  if (!name || name.trim() === "") return true;
+  return name.trim().toLowerCase() === "default";
+}
+
+/**
+ * Resolve which dynamic agent to use for chat.
+ *
+ * - Explicit id/name → must exist in accessible-agents
+ * - `default` / omitted → first available agent (then any agent)
+ */
+export async function resolveSessionAgent(
+  serverUrl: string,
+  getToken: () => Promise<string>,
+  requestedName?: string,
+): Promise<Agent> {
+  const agents = await fetchAgents(serverUrl, getToken);
+  if (agents.length === 0) {
+    throw new Error(
+      "No agents returned for your account. Ask an admin to grant agent#use on a dynamic agent, then run `caipe agents list`.",
+    );
+  }
+
+  if (!isAutoAgentName(requestedName)) {
+    const found = getAgent(agents, requestedName!.trim());
+    if (found) return found;
+    const ids = agents.map((a) => a.name).join(", ");
+    throw new Error(
+      `Agent "${requestedName}" not found. Run \`caipe agents list\`. Accessible ids: ${ids}`,
+    );
+  }
+
+  const pick = agents.find((a) => a.available) ?? agents[0];
+  process.stderr.write(
+    `[INFO] Using agent "${pick.name}" (${pick.displayName}). Pass --agent <id> to choose another.\n`,
+  );
+  return pick;
+}
+
 /**
  * Check availability flag from the agent object.
  */

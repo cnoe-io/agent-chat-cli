@@ -19,6 +19,8 @@ import { globalConfigDir } from "./config.js";
 // ---------------------------------------------------------------------------
 
 export interface AgentOAuthConfig {
+  /** OIDC issuer (realm URL), when known from discovery */
+  issuer?: string;
   authorization_endpoint?: string;
   token_endpoint?: string;
   device_authorization_endpoint?: string;
@@ -111,6 +113,7 @@ export async function discoverAgentConfig(serverUrl: string): Promise<AgentConfi
       const oidc = (await res.json()) as Record<string, unknown>;
       const config: AgentConfig = {
         oauth: {
+          issuer: typeof oidc.issuer === "string" ? oidc.issuer.replace(/\/+$/, "") : undefined,
           authorization_endpoint: oidc.authorization_endpoint as string | undefined,
           token_endpoint: oidc.token_endpoint as string | undefined,
           device_authorization_endpoint: oidc.device_authorization_endpoint as string | undefined,
@@ -138,6 +141,54 @@ export function clearAgentConfigCache(): void {
       // best-effort
     }
   }
+}
+
+const OIDC_ENDPOINT_SUFFIXES = [
+  "/protocol/openid-connect/auth/device",
+  "/protocol/openid-connect/auth",
+  "/protocol/openid-connect/token",
+  "/oauth/device/code",
+  "/oauth/authorize",
+  "/oauth/token",
+] as const;
+
+/**
+ * Derive the OIDC issuer (Keycloak realm base URL) from discovery OAuth fields.
+ * Used to auto-set `auth.url` after `server.url` is configured.
+ */
+export function oauthIssuerFromConfig(config: AgentConfig): string | undefined {
+  const oauth = config.oauth;
+  if (!oauth) return undefined;
+
+  if (oauth.issuer?.trim()) {
+    return oauth.issuer.trim().replace(/\/+$/, "");
+  }
+
+  const candidates = [
+    oauth.token_endpoint,
+    oauth.authorization_endpoint,
+    oauth.device_authorization_endpoint,
+  ].filter((u): u is string => typeof u === "string" && u.length > 0);
+
+  for (const url of candidates) {
+    for (const suffix of OIDC_ENDPOINT_SUFFIXES) {
+      if (url.endsWith(suffix)) {
+        return url.slice(0, -suffix.length).replace(/\/+$/, "");
+      }
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Fetch `/.well-known/agent.json` (or OIDC metadata) for `serverUrl` and return
+ * the issuer URL for `auth.url`, if discovery succeeds.
+ */
+export async function discoverAuthIssuer(serverUrl: string): Promise<string | undefined> {
+  clearAgentConfigCache();
+  const config = await discoverAgentConfig(serverUrl);
+  return oauthIssuerFromConfig(config);
 }
 
 // ---------------------------------------------------------------------------

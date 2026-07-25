@@ -9,8 +9,7 @@
 import { render } from "ink";
 import React from "react";
 
-import { fetchAgents, getAgent } from "../agents/registry.js";
-import { DEFAULT_AGENT } from "../agents/types.js";
+import { resolveSessionAgent } from "../agents/registry.js";
 import { getValidToken } from "../auth/tokens.js";
 import {
   ServerNotConfigured,
@@ -115,23 +114,16 @@ export async function runChat(opts: ChatOpts, globalOpts: GlobalOpts): Promise<v
 
   const getToken = () => getValidToken(authUrl);
 
-  // Resolve agent — prefer explicit flag, fall back to default
-  const agentNameOpt = opts.agent ?? globalOpts.agent;
-  let resolvedAgent = DEFAULT_AGENT;
-  if (agentNameOpt) {
-    try {
-      const agents = await fetchAgents(serverUrl, getToken);
-      const found = getAgent(agents, agentNameOpt);
-      if (found) {
-        resolvedAgent = found;
-      } else {
-        process.stderr.write(
-          `[WARNING] Agent "${agentNameOpt}" not found in registry — using default.\n`,
-        );
-      }
-    } catch {
-      // registry unavailable — continue with default
-    }
+  let resolvedAgent;
+  try {
+    resolvedAgent = await resolveSessionAgent(
+      serverUrl,
+      getToken,
+      opts.agent ?? globalOpts.agent,
+    );
+  } catch (err) {
+    process.stderr.write(`[ERROR] ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exit(3);
   }
   const agentName = resolvedAgent.name;
 
@@ -162,6 +154,7 @@ export async function runChat(opts: ChatOpts, globalOpts: GlobalOpts): Promise<v
       React.createElement(Repl, {
         session,
         adapter,
+        initialAgent: resolvedAgent,
         systemContext,
         serverUrl: serverUrl,
         onExit: (finalSession: ChatSession) => {
