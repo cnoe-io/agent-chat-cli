@@ -3,7 +3,7 @@
  */
 
 import { getAuthUrl, getKbUrl } from "../platform/config.js";
-import { resolveKbAccessToken, type KbAuthOptions } from "./auth.js";
+import { type KbAuthOptions, resolveKbAccessToken } from "./auth.js";
 
 export interface KbRequestOptions extends KbAuthOptions {
   kbUrl?: string;
@@ -11,7 +11,7 @@ export interface KbRequestOptions extends KbAuthOptions {
   method?: string;
   body?: unknown;
   /** Raw body (e.g. multipart FormData) — skips JSON Content-Type */
-  rawBody?: BodyInit;
+  rawBody?: NonNullable<RequestInit["body"]>;
   searchParams?: Record<string, string | number | undefined>;
 }
 
@@ -63,7 +63,7 @@ export async function kbRequest<T = unknown>(
     headers["X-Tenant-Id"] = options.tenantId.trim();
   }
 
-  let body: BodyInit | undefined;
+  let body: NonNullable<RequestInit["body"]> | undefined;
   if (options.rawBody !== undefined) {
     body = options.rawBody;
   } else if (options.body !== undefined) {

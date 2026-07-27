@@ -333,7 +333,9 @@ kbJobCmd
     await runKbJobsByDatasource(datasourceId, kbCtx(opts));
   });
 
-const kbIngestCmd = kbCmd.command("ingest").description("Queue ingestion (requires ingest permission)");
+const kbIngestCmd = kbCmd
+  .command("ingest")
+  .description("Queue ingestion (requires ingest permission)");
 
 kbIngestCmd
   .command("url")

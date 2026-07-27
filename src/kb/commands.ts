@@ -99,7 +99,10 @@ export async function runKbJobsByDatasource(
   opts: KbCommandContext,
 ): Promise<void> {
   try {
-    const data = await kbRequest(`/v1/jobs/datasource/${encodeURIComponent(datasourceId)}`, ctx(opts));
+    const data = await kbRequest(
+      `/v1/jobs/datasource/${encodeURIComponent(datasourceId)}`,
+      ctx(opts),
+    );
     writeKbJson(data);
   } catch (e) {
     writeKbError(e);

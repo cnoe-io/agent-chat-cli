@@ -2,15 +2,16 @@
  * KB commands always emit JSON (AWS CLI style).
  */
 
+import { KbApiError } from "./client.js";
+
 export function writeKbJson(data: unknown): void {
   process.stdout.write(`${JSON.stringify(data, null, 2)}\n`);
 }
 
 export function writeKbError(err: unknown): never {
-  if (err && typeof err === "object" && "name" in err && err.name === "KbApiError") {
-    const e = err as { message: string; status: number; body?: unknown };
+  if (err instanceof KbApiError) {
     process.stderr.write(
-      `${JSON.stringify({ error: e.message, status: e.status, body: e.body ?? null }, null, 2)}\n`,
+      `${JSON.stringify({ error: err.message, status: err.status, body: err.body ?? null }, null, 2)}\n`,
     );
     process.exit(1);
   }
