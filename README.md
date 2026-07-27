@@ -11,11 +11,11 @@ git clone https://github.com/cnoe-io/caipe-cli.git && cd caipe-cli && bun instal
 # binary: ./dist/caipe  — add to PATH or symlink ~/.local/bin/caipe
 ```
 
-**Point at Grid preview, sign in, chat:**
+**Point at your Grid deployment, sign in, chat:**
 
 ```bash
-caipe config set server.url https://grid.preview.outshift.io
-caipe config set auth.url https://idp.grid.preview.outshift.io/realms/caipe
+caipe config set server.url https://grid.example.com
+caipe config set auth.url https://idp.grid.example.com/realms/caipe
 caipe auth login
 caipe agents list
 caipe chat --agent '<id-from-agents-list>'
@@ -63,7 +63,7 @@ bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/setup
 Preconfigure the server:
 
 ```bash
-CAIPE_SERVER_URL=https://grid.preview.outshift.io \
+CAIPE_SERVER_URL=https://grid.example.com \
   bash <(curl -fsSL https://raw.githubusercontent.com/cnoe-io/caipe-cli/main/setup-caipe-cli.sh)
 ```
 
@@ -146,13 +146,13 @@ caipe chat
 
 `config set server.url` also sets **`auth.url`** to the same value.
 
-### Grid preview (split API vs IdP)
+### Split API vs IdP
 
-On **`grid.preview.outshift.io`**, the BFF may not expose `/oauth/authorize` yet. Point **API** at Grid and **OAuth** at Keycloak:
+On some deployments the BFF may not expose `/oauth/authorize` yet. Point **API** at Grid and **OAuth** at Keycloak:
 
 ```bash
-caipe config set server.url https://grid.preview.outshift.io
-caipe config set auth.url https://idp.grid.preview.outshift.io/realms/caipe
+caipe config set server.url https://grid.example.com
+caipe config set auth.url https://idp.grid.example.com/realms/caipe
 rm -f ~/.config/caipe/agent-config.json
 caipe auth logout    # if you have stale tokens
 caipe auth login
