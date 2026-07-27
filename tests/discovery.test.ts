@@ -1,8 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  heuristicAuthIssuerCandidates,
-  oauthIssuerFromConfig,
-} from "../src/platform/discovery.js";
+import { heuristicAuthIssuerCandidates, oauthIssuerFromConfig } from "../src/platform/discovery.js";
 
 describe("oauthIssuerFromConfig", () => {
   it("returns explicit issuer when present", () => {
@@ -20,8 +17,7 @@ describe("oauthIssuerFromConfig", () => {
     expect(
       oauthIssuerFromConfig({
         oauth: {
-          token_endpoint:
-            "https://idp.example.com/realms/caipe/protocol/openid-connect/token",
+          token_endpoint: "https://idp.example.com/realms/caipe/protocol/openid-connect/token",
           authorization_endpoint:
             "https://idp.example.com/realms/caipe/protocol/openid-connect/auth",
         },

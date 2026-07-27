@@ -93,6 +93,7 @@ export function InkDiffBlock({ text, width }: InkDiffBlockProps): React.ReactEle
 
         return (
           // ink 5 has no Box-level background; the row tint lives on the Text nodes.
+          // biome-ignore lint/suspicious/noArrayIndexKey: lines are a fixed re-parse of one diff's text, never reordered or spliced.
           <Box key={index} flexDirection="row">
             <Text backgroundColor={bg} dimColor={row.kind === "meta"}>
               {gutterCell(row.oldNum)}

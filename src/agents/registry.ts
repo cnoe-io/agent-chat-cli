@@ -133,8 +133,7 @@ export function pickSessionAgent(
       return preferred;
     }
     process.stderr.write(
-      `[WARNING] Configured default agent "${configuredDefault}" is not accessible. ` +
-        "Run `caipe agents list` or `caipe config unset agent.default`. Falling back to first agent.\n",
+      `[WARNING] Configured default agent "${configuredDefault}" is not accessible. Run \`caipe agents list\` or \`caipe config unset agent.default\`. Falling back to first agent.\n`,
     );
   }
 
