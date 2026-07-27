@@ -138,7 +138,11 @@ export function pickSessionAgent(
     );
   }
 
+  // agents is non-empty (guarded above), so agents[0] is always defined.
   const pick = agents.find((a) => a.available) ?? agents[0];
+  if (!pick) {
+    throw new Error("No agents returned for your account. Run `caipe agents list`.");
+  }
   return pick;
 }
 
