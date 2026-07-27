@@ -42,10 +42,10 @@ describe("formatClientContextBlock", () => {
   it("derives email from token set", () => {
     const tokens: TokenSet = {
       accessToken: "x",
-      email: "agent-user@grid.outshift.io",
+      email: "agent-user@grid.example.com",
       displayName: "Agent User",
       identity: "uuid-sub",
     };
-    expect(clientUserFromTokenSet(tokens).email).toBe("agent-user@grid.outshift.io");
+    expect(clientUserFromTokenSet(tokens).email).toBe("agent-user@grid.example.com");
   });
 });
