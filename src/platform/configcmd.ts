@@ -275,8 +275,7 @@ export async function runConfigDiscover(): Promise<void> {
   const discovery = await discoverAuthIssuer(serverUrl);
   if (!discovery) {
     process.stderr.write(
-      `[ERROR] Could not discover OAuth issuer for ${serverUrl} ` +
-        `(tried well-known URLs and host heuristics; set auth.url manually)\n`,
+      `[ERROR] Could not discover OAuth issuer for ${serverUrl} (tried well-known URLs and host heuristics; set auth.url manually)\n`,
     );
     process.exit(3);
   }

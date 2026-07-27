@@ -108,7 +108,7 @@ const RESET = NO_COLOR ? "" : "\x1b[0m";
 export function printUpdateBanner(currentVersion: string, latestVersion: string): void {
   // Plain-text versions determine visual widths; ANSI versions are for colour only.
   const plain1 = `Update available: v${currentVersion} → v${latestVersion}`;
-  const plain2 = `Run: caipe update`;
+  const plain2 = "Run: caipe update";
   const innerWidth = Math.max(plain1.length, plain2.length) + 4; // 2 leading + 2 trailing spaces
   const bar = "─".repeat(innerWidth);
 
@@ -117,7 +117,7 @@ export function printUpdateBanner(currentVersion: string, latestVersion: string)
 
   if (NO_COLOR) {
     process.stdout.write(`\n  Update available: v${currentVersion} → v${latestVersion}\n`);
-    process.stdout.write(`  Run: caipe update\n\n`);
+    process.stdout.write("  Run: caipe update\n\n");
     return;
   }
 
